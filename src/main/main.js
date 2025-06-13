@@ -63,7 +63,7 @@ function createWindow() {
   if (isDev) {
     // Wait for React dev server to be ready
     const waitForServer = async () => {
-      const maxAttempts = 20;
+      const maxAttempts = 60; // Increased from 20 to 60 (30 seconds)
       for (let i = 0; i < maxAttempts; i++) {
         try {
           await new Promise((resolve, reject) => {
@@ -71,13 +71,13 @@ function createWindow() {
               resolve(res);
             });
             req.on('error', reject);
-            req.setTimeout(1000, () => reject(new Error('Timeout')));
+            req.setTimeout(2000, () => reject(new Error('Timeout'))); // Increased timeout
           });
-          console.log('React dev server is ready');
+          console.log('✅ React dev server is ready!');
           return true;
         } catch (error) {
           // Server not ready yet
-          console.log(`Waiting for React dev server... (${i + 1}/${maxAttempts})`);
+          console.log(`⏳ Waiting for React dev server... (${i + 1}/${maxAttempts})`);
         }
         await new Promise(resolve => setTimeout(resolve, 500));
       }
