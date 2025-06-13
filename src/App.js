@@ -8,10 +8,22 @@ import Habits from './components/Habits';
 import Analytics from './components/Analytics';
 import Settings from './components/Settings';
 import VoiceInterface from './components/VoiceInterface';
+import VoiceChatLog from './components/VoiceChatLog';
+import voiceService from './shared/voice-service';
 
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentPersonality, setCurrentPersonality] = useState('Coach');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [showChatLog, setShowChatLog] = useState(false);
+
+  // Set up voice service chat log callback
+  useEffect(() => {
+    voiceService.setChatLogCallback(setChatMessages);
+    return () => {
+      voiceService.setChatLogCallback(null);
+    };
+  }, []);
 
   return (
     <Router>
@@ -38,8 +50,20 @@ function App() {
           <VoiceInterface 
             personality={currentPersonality}
             onPersonalityChange={setCurrentPersonality}
+            onShowChatLog={() => setShowChatLog(true)}
           />
         </main>
+
+        {/* Voice Chat Log */}
+        <VoiceChatLog
+          messages={chatMessages}
+          isVisible={showChatLog}
+          onToggle={() => setShowChatLog(!showChatLog)}
+          onClear={() => {
+            voiceService.clearChatHistory();
+            setChatMessages([]);
+          }}
+        />
       </div>
     </Router>
   );

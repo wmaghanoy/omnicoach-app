@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const http = require('http');
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
@@ -11,9 +12,12 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      enableRemoteModule: true
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,
+      webSecurity: true
     },
     show: false,
     backgroundColor: '#0f0f0f'
@@ -30,11 +34,67 @@ function createWindow() {
     }
   });
 
+  // Set additional security headers (temporarily disabled for debugging)
+  /*
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' data: blob:; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: blob:; " +
+          "font-src 'self' data:; " +
+          "connect-src 'self' ws: wss: http://localhost:* https://api.elevenlabs.io https://api.openai.com https://api.anthropic.com http://localhost:11434; " +
+          "media-src 'self' blob: data:; " +
+          "worker-src 'self' blob:;"
+        ]
+      }
+    });
+  });
+  */
+
   const startUrl = isDev 
     ? 'http://localhost:3281' 
     : `file://${path.join(__dirname, '../build/index.html')}`;
 
-  mainWindow.loadURL(startUrl);
+  // In development, wait for React dev server to start
+  if (isDev) {
+    // Wait for React dev server to be ready
+    const waitForServer = async () => {
+      const maxAttempts = 20;
+      for (let i = 0; i < maxAttempts; i++) {
+        try {
+          await new Promise((resolve, reject) => {
+            const req = http.get('http://localhost:3281', (res) => {
+              resolve(res);
+            });
+            req.on('error', reject);
+            req.setTimeout(1000, () => reject(new Error('Timeout')));
+          });
+          console.log('React dev server is ready');
+          return true;
+        } catch (error) {
+          // Server not ready yet
+          console.log(`Waiting for React dev server... (${i + 1}/${maxAttempts})`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      return false;
+    };
+
+    waitForServer().then(ready => {
+      if (ready) {
+        mainWindow.loadURL(startUrl);
+      } else {
+        console.error('React dev server failed to start');
+        mainWindow.loadURL(`data:text/html,<h1>Failed to connect to React dev server at ${startUrl}</h1>`);
+      }
+    });
+  } else {
+    mainWindow.loadURL(startUrl);
+  }
 
   if (isDev) {
     mainWindow.webContents.openDevTools();

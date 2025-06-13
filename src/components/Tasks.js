@@ -10,46 +10,17 @@ import {
   CheckCircle,
   Circle,
   Edit,
-  Trash2
+  Trash2,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 const Tasks = () => {
-  const [tasks, setTasks] = useState([
-    {
-      id: 1,
-      title: 'Finish project proposal',
-      description: 'Complete the Q4 project proposal with budget estimates',
-      status: 'pending',
-      priority: 'high',
-      due_date: '2024-01-15',
-      category: 'Work',
-      estimated_time: 120,
-      created_at: '2024-01-10T10:00:00Z'
-    },
-    {
-      id: 2,
-      title: 'Weekly planning session',
-      description: 'Plan tasks and goals for the upcoming week',
-      status: 'pending',
-      priority: 'medium',
-      due_date: '2024-01-14',
-      category: 'Planning',
-      estimated_time: 60,
-      created_at: '2024-01-10T09:00:00Z'
-    },
-    {
-      id: 3,
-      title: 'Review quarterly metrics',
-      description: 'Analyze performance metrics from Q4',
-      status: 'completed',
-      priority: 'high',
-      due_date: '2024-01-12',
-      category: 'Work',
-      estimated_time: 90,
-      created_at: '2024-01-09T14:00:00Z'
-    }
-  ]);
-
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -68,6 +39,25 @@ const Tasks = () => {
     { value: 'high', label: 'High', color: 'text-red-300 bg-red-900' }
   ];
 
+  // Load tasks from database on component mount
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const result = await window.electron?.invoke('tasks:getAll');
+        setTasks(result || []);
+      } catch (err) {
+        console.error('Failed to load tasks:', err);
+        setError('Failed to load tasks. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTasks();
+  }, []);
+
   const filteredTasks = tasks.filter(task => {
     const matchesFilter = filter === 'all' || task.status === filter;
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,44 +65,151 @@ const Tasks = () => {
     return matchesFilter && matchesSearch;
   });
 
-  const toggleTask = (taskId) => {
-    setTasks(tasks.map(task => 
-      task.id === taskId 
-        ? { ...task, status: task.status === 'completed' ? 'pending' : 'completed' }
-        : task
-    ));
+  const toggleTask = async (taskId) => {
+    try {
+      setSaving(true);
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const newStatus = task.status === 'completed' ? 'pending' : 'completed';
+      
+      await window.electron?.invoke('tasks:update', taskId, { status: newStatus });
+      
+      // Update local state optimistically
+      setTasks(tasks.map(t => 
+        t.id === taskId ? { ...t, status: newStatus } : t
+      ));
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      setError('Failed to update task. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTask.title.trim()) return;
     
-    const task = {
-      id: Date.now(),
-      ...newTask,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      estimated_time: parseInt(newTask.estimated_time) || null
-    };
-    
-    setTasks([task, ...tasks]);
-    setNewTask({
-      title: '',
-      description: '',
-      priority: 'medium',
-      due_date: '',
-      category: '',
-      estimated_time: ''
-    });
-    setShowAddForm(false);
+    try {
+      setSaving(true);
+      const taskData = {
+        title: newTask.title,
+        description: newTask.description || null,
+        priority: newTask.priority,
+        due_date: newTask.due_date || null,
+        category: newTask.category || null,
+        estimated_time: parseInt(newTask.estimated_time) || null,
+        status: 'pending'
+      };
+      
+      const result = await window.electron?.invoke('tasks:create', taskData);
+      
+      if (result) {
+        // Refresh tasks from database to get the complete record with ID
+        const updatedTasks = await window.electron?.invoke('tasks:getAll');
+        setTasks(updatedTasks || []);
+        
+        // Reset form
+        setNewTask({
+          title: '',
+          description: '',
+          priority: 'medium',
+          due_date: '',
+          category: '',
+          estimated_time: ''
+        });
+        setShowAddForm(false);
+      }
+    } catch (err) {
+      console.error('Failed to create task:', err);
+      setError('Failed to create task. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const deleteTask = (taskId) => {
-    setTasks(tasks.filter(task => task.id !== taskId));
+  const deleteTask = async (taskId) => {
+    if (!window.confirm('Are you sure you want to delete this task?')) return;
+    
+    try {
+      setSaving(true);
+      await window.electron?.invoke('tasks:delete', taskId);
+      
+      // Remove from local state
+      setTasks(tasks.filter(task => task.id !== taskId));
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      setError('Failed to delete task. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const retryLoad = () => {
+    setError(null);
+    const fetchTasks = async () => {
+      try {
+        setLoading(true);
+        const result = await window.electron?.invoke('tasks:getAll');
+        setTasks(result || []);
+      } catch (err) {
+        console.error('Failed to load tasks:', err);
+        setError('Failed to load tasks. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTasks();
   };
 
   const getPriorityConfig = (priority) => {
     return priorities.find(p => p.value === priority) || priorities[1];
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Tasks</h1>
+            <p className="text-gray-400 mt-1">Manage your to-do list and track progress</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-400">Loading tasks...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Tasks</h1>
+            <p className="text-gray-400 mt-1">Manage your to-do list and track progress</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Error Loading Tasks</h3>
+            <p className="text-gray-400 mb-4">{error}</p>
+            <button 
+              onClick={retryLoad}
+              className="button-primary"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -124,9 +221,14 @@ const Tasks = () => {
         </div>
         <button
           onClick={() => setShowAddForm(true)}
-          className="button-primary flex items-center space-x-2"
+          disabled={saving}
+          className="button-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Plus className="w-4 h-4" />
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
           <span>Add Task</span>
         </button>
       </div>
@@ -169,9 +271,12 @@ const Tasks = () => {
               <div className="flex items-start space-x-4">
                 <button
                   onClick={() => toggleTask(task.id)}
-                  className="mt-1"
+                  disabled={saving}
+                  className="mt-1 disabled:opacity-50"
                 >
-                  {task.status === 'completed' ? (
+                  {saving ? (
+                    <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                  ) : task.status === 'completed' ? (
                     <CheckCircle className="w-5 h-5 text-green-500" />
                   ) : (
                     <Circle className="w-5 h-5 text-gray-400 hover:text-white transition-colors" />
@@ -199,8 +304,13 @@ const Tasks = () => {
                       <span className={`text-xs px-2 py-1 rounded ${priorityConfig.color}`}>
                         {priorityConfig.label}
                       </span>
-                      <button className="p-1 rounded hover:bg-gray-800 transition-colors">
-                        <MoreHorizontal className="w-4 h-4 text-gray-400" />
+                      <button 
+                        onClick={() => deleteTask(task.id)}
+                        disabled={saving}
+                        className="p-1 rounded hover:bg-red-900 hover:text-red-400 transition-colors disabled:opacity-50"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-4 h-4 text-gray-400" />
                       </button>
                     </div>
                   </div>
@@ -232,12 +342,29 @@ const Tasks = () => {
           );
         })}
 
-        {filteredTasks.length === 0 && (
+        {filteredTasks.length === 0 && tasks.length === 0 && (
           <div className="text-center py-12">
             <CheckCircle className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-400 mb-2">No tasks yet</h3>
+            <p className="text-gray-500 mb-4">Create your first task to get started.</p>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="button-primary"
+            >
+              Add Your First Task
+            </button>
+          </div>
+        )}
+
+        {filteredTasks.length === 0 && tasks.length > 0 && (
+          <div className="text-center py-12">
+            <Search className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-400 mb-2">No tasks found</h3>
             <p className="text-gray-500">
-              {searchTerm ? 'Try adjusting your search terms.' : 'Create your first task to get started.'}
+              {searchTerm || filter !== 'all' 
+                ? 'Try adjusting your search terms or filters.' 
+                : 'No tasks match your current view.'
+              }
             </p>
           </div>
         )}
@@ -326,15 +453,24 @@ const Tasks = () => {
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={() => setShowAddForm(false)}
-                className="button-secondary"
+                disabled={saving}
+                className="button-secondary disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={addTask}
-                className="button-primary"
+                disabled={saving || !newTask.title.trim()}
+                className="button-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
-                Add Task
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <span>Add Task</span>
+                )}
               </button>
             </div>
           </div>

@@ -9,41 +9,39 @@ import {
   Palette,
   Key,
   Save,
-  RefreshCw
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react';
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [settings, setSettings] = useState({
-    // General
+    // Default values - will be overridden by database values
     theme: 'dark',
-    notifications: true,
-    autoStart: false,
-    
-    // Voice
-    voiceEnabled: true,
-    alwaysListening: false,
+    notifications: 'true',
+    autoStart: 'false',
+    voiceEnabled: 'true',
+    alwaysListening: 'false',
     wakeWord: 'Hey Coach',
     defaultPersonality: 'Coach',
-    voiceVolume: 80,
-    
-    // LLM
+    voiceVolume: '80',
     defaultLLM: 'ollama',
     ollamaModel: 'mistral',
     openaiApiKey: '',
     claudeApiKey: '',
-    
-    // Budget
-    monthlyBudget: 100,
-    budgetWarnings: true,
-    warningThreshold: 80,
-    
-    // Feedback
-    feedbackFrequency: 3,
-    autoFeedback: true,
+    monthlyBudget: '100',
+    budgetWarnings: 'true',
+    warningThreshold: '80',
+    feedbackFrequency: '3',
+    autoFeedback: 'true',
     feedbackTone: 'supportive'
   });
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
 
   const tabs = [
@@ -67,22 +65,95 @@ const Settings = () => {
     { value: 'claude', label: 'Anthropic (Claude)' }
   ];
 
+  // Load settings from database on component mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const result = await window.electron?.invoke('settings:getAll');
+        
+        if (result && Object.keys(result).length > 0) {
+          // Merge database settings with defaults
+          setSettings(prev => ({ ...prev, ...result }));
+        }
+      } catch (err) {
+        console.error('Failed to load settings:', err);
+        setError('Failed to load settings. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSettings();
+  }, []);
+
   const saveSettings = async () => {
+    setSaving(true);
     setSaveStatus('saving');
     
     try {
-      // Simulate saving to database
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Save all settings to database
+      for (const [key, value] of Object.entries(settings)) {
+        await window.electron?.invoke('settings:set', key, value);
+      }
+      
       setSaveStatus('saved');
-      setTimeout(() => setSaveStatus(''), 2000);
+      setTimeout(() => setSaveStatus(''), 3000);
     } catch (error) {
+      console.error('Failed to save settings:', error);
       setSaveStatus('error');
-      setTimeout(() => setSaveStatus(''), 2000);
+      setError('Failed to save settings. Please try again.');
+      setTimeout(() => setSaveStatus(''), 3000);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const updateSetting = (key, value) => {
+  const updateSetting = async (key, value) => {
+    // Update local state immediately for responsive UI
     setSettings(prev => ({ ...prev, [key]: value }));
+    
+    try {
+      // Save individual setting to database
+      await window.electron?.invoke('settings:set', key, value);
+    } catch (err) {
+      console.error('Failed to save setting:', err);
+      setError('Failed to save setting. Changes may not persist.');
+    }
+  };
+
+  const retryLoad = () => {
+    setError(null);
+    const loadSettings = async () => {
+      try {
+        setLoading(true);
+        const result = await window.electron?.invoke('settings:getAll');
+        if (result && Object.keys(result).length > 0) {
+          setSettings(prev => ({ ...prev, ...result }));
+        }
+      } catch (err) {
+        console.error('Failed to load settings:', err);
+        setError('Failed to load settings. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSettings();
+  };
+
+  // Helper functions to handle string/boolean conversion
+  const getBooleanValue = (value) => {
+    return value === 'true' || value === true;
+  };
+
+  const getStringValue = (value) => {
+    return value?.toString() || '';
+  };
+
+  const getNumericValue = (value) => {
+    return parseInt(value) || 0;
   };
 
   const renderGeneral = () => (
@@ -111,8 +182,8 @@ const Settings = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={settings.autoStart}
-              onChange={(e) => updateSetting('autoStart', e.target.checked)}
+              checked={getBooleanValue(settings.autoStart)}
+              onChange={(e) => updateSetting('autoStart', e.target.checked.toString())}
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
             />
             <span className="text-gray-300">Start OmniCoach on system startup</span>
@@ -130,8 +201,8 @@ const Settings = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={settings.voiceEnabled}
-              onChange={(e) => updateSetting('voiceEnabled', e.target.checked)}
+              checked={getBooleanValue(settings.voiceEnabled)}
+              onChange={(e) => updateSetting('voiceEnabled', e.target.checked.toString())}
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
             />
             <span className="text-gray-300">Enable voice interaction</span>
@@ -140,8 +211,8 @@ const Settings = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={settings.alwaysListening}
-              onChange={(e) => updateSetting('alwaysListening', e.target.checked)}
+              checked={getBooleanValue(settings.alwaysListening)}
+              onChange={(e) => updateSetting('alwaysListening', e.target.checked.toString())}
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
             />
             <span className="text-gray-300">Always listening mode</span>
@@ -164,11 +235,11 @@ const Settings = () => {
               type="range"
               min="0"
               max="100"
-              value={settings.voiceVolume}
-              onChange={(e) => updateSetting('voiceVolume', parseInt(e.target.value))}
+              value={getNumericValue(settings.voiceVolume)}
+              onChange={(e) => updateSetting('voiceVolume', e.target.value)}
               className="w-full max-w-xs"
             />
-            <span className="text-sm text-gray-400">{settings.voiceVolume}%</span>
+            <span className="text-sm text-gray-400">{getNumericValue(settings.voiceVolume)}%</span>
           </div>
         </div>
       </div>
@@ -295,8 +366,8 @@ const Settings = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={settings.budgetWarnings}
-              onChange={(e) => updateSetting('budgetWarnings', e.target.checked)}
+              checked={getBooleanValue(settings.budgetWarnings)}
+              onChange={(e) => updateSetting('budgetWarnings', e.target.checked.toString())}
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
             />
             <span className="text-gray-300">Enable budget warnings</span>
@@ -344,8 +415,8 @@ const Settings = () => {
           <label className="flex items-center space-x-3">
             <input
               type="checkbox"
-              checked={settings.autoFeedback}
-              onChange={(e) => updateSetting('autoFeedback', e.target.checked)}
+              checked={getBooleanValue(settings.autoFeedback)}
+              onChange={(e) => updateSetting('autoFeedback', e.target.checked.toString())}
               className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
             />
             <span className="text-gray-300">Enable automatic feedback</span>
@@ -355,8 +426,8 @@ const Settings = () => {
             <label className="block text-sm font-medium text-gray-300 mb-2">Feedback Frequency (per day)</label>
             <input
               type="number"
-              value={settings.feedbackFrequency}
-              onChange={(e) => updateSetting('feedbackFrequency', parseInt(e.target.value))}
+              value={getNumericValue(settings.feedbackFrequency)}
+              onChange={(e) => updateSetting('feedbackFrequency', e.target.value)}
               className="input-primary w-full max-w-xs"
               min="1"
               max="10"
@@ -411,6 +482,51 @@ const Settings = () => {
     </div>
   );
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Settings</h1>
+            <p className="text-gray-400 mt-1">Configure OmniCoach to your preferences</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-400">Loading settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Settings</h1>
+            <p className="text-gray-400 mt-1">Configure OmniCoach to your preferences</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Error Loading Settings</h3>
+            <p className="text-gray-400 mb-4">{error}</p>
+            <button 
+              onClick={retryLoad}
+              className="button-primary"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -421,15 +537,23 @@ const Settings = () => {
         </div>
         <button
           onClick={saveSettings}
-          disabled={saveStatus === 'saving'}
-          className={`button-primary flex items-center space-x-2 ${
+          disabled={saving}
+          className={`button-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed ${
             saveStatus === 'saved' ? 'bg-green-600' : 
             saveStatus === 'error' ? 'bg-red-600' : ''
           }`}
         >
-          <Save className="w-4 h-4" />
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : saveStatus === 'saved' ? (
+            <CheckCircle className="w-4 h-4" />
+          ) : saveStatus === 'error' ? (
+            <AlertCircle className="w-4 h-4" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
           <span>
-            {saveStatus === 'saving' ? 'Saving...' : 
+            {saving ? 'Saving...' : 
              saveStatus === 'saved' ? 'Saved!' : 
              saveStatus === 'error' ? 'Error' : 'Save Changes'}
           </span>

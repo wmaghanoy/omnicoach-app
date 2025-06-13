@@ -12,14 +12,8 @@ class VoiceService {
       
       // Initialize logging if in Electron
       this.logger = null;
-      if (typeof window !== 'undefined' && window.require) {
-        try {
-          this.logger = window.require('../shared/logger');
-          this.logger.info('VoiceService initialized');
-        } catch (error) {
-          console.warn('Could not initialize logger:', error);
-        }
-      }
+      // Note: With context isolation enabled, we no longer have access to window.require
+      // Logging will be handled through console for now
       
       this.initSpeechRecognition();
     }
@@ -95,12 +89,11 @@ class VoiceService {
 
     async processVoiceCommand(text) {
       console.log(`🎤 Processing voice command: "${text}" with personality: ${this.personality}`);
-      this.logger?.voice('Processing voice command', { text, personality: this.personality });
       
       try {
         // Check if we're in Electron environment
-        if (typeof window === 'undefined' || !window.require) {
-          console.error('❌ Not in Electron environment - window.require not available');
+        if (typeof window === 'undefined' || !window.electron) {
+          console.error('❌ Not in Electron environment - window.electron not available');
           throw new Error('Electron IPC not available');
         }
         
@@ -145,14 +138,12 @@ class VoiceService {
     async getUserContext() {
       // Get user data via Electron IPC if available
       try {
-        if (typeof window !== 'undefined' && window.require) {
-          const { ipcRenderer } = window.require('electron');
-          
-          console.log('📊 Fetching user data via direct IPC...');
+        if (typeof window !== 'undefined' && window.electron) {
+          console.log('📊 Fetching user data via electron API...');
           const [tasks, goals, habits] = await Promise.all([
-            ipcRenderer.invoke('tasks:getAll').catch((e) => { console.warn('Tasks fetch failed:', e); return []; }),
-            ipcRenderer.invoke('goals:getAll').catch((e) => { console.warn('Goals fetch failed:', e); return []; }),
-            ipcRenderer.invoke('habits:getAll').catch((e) => { console.warn('Habits fetch failed:', e); return []; })
+            window.electron.invoke('tasks:getAll').catch((e) => { console.warn('Tasks fetch failed:', e); return []; }),
+            window.electron.invoke('goals:getAll').catch((e) => { console.warn('Goals fetch failed:', e); return []; }),
+            window.electron.invoke('habits:getAll').catch((e) => { console.warn('Habits fetch failed:', e); return []; })
           ]);
           
           console.log('📊 User data fetched:', { 
@@ -163,7 +154,7 @@ class VoiceService {
           
           return { tasks, goals, habits };
         } else {
-          console.warn('❌ window.require not available');
+          console.warn('❌ window.electron not available');
           return {};
         }
       } catch (error) {
@@ -175,16 +166,14 @@ class VoiceService {
     async generateAIResponse(prompt, context) {
       // Use LLM service if available via IPC
       try {
-        if (typeof window !== 'undefined' && window.require) {
-          const { ipcRenderer } = window.require('electron');
-          
-          console.log('🔄 Calling LLM via direct IPC with:', {
+        if (typeof window !== 'undefined' && window.electron) {
+          console.log('🔄 Calling LLM via electron API with:', {
             prompt: prompt.substring(0, 50) + '...',
             contextKeys: Object.keys(context),
             personality: this.personality
           });
           
-          const response = await ipcRenderer.invoke('llm:generateResponse', 
+          const response = await window.electron.invoke('llm:generateResponse', 
             prompt, 
             context, 
             {
@@ -195,7 +184,7 @@ class VoiceService {
           
           console.log('🔄 Raw IPC response received:', response);
         } else {
-          throw new Error('Electron IPC not available - window.require not found');
+          throw new Error('Electron IPC not available - window.electron not found');
         }
         
         console.log('🤖 LLM response received:', {
@@ -466,5 +455,6 @@ class VoiceService {
     }
   }
 
-  const voiceService = new VoiceService();
-  export default voiceService;
+const voiceService = new VoiceService();
+
+export default voiceService;

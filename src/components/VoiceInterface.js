@@ -8,8 +8,9 @@ import {
   User,
   MessageCircle
 } from 'lucide-react';
+import voiceService from '../shared/voice-service';
 
-const VoiceInterface = ({ personality, onPersonalityChange }) => {
+const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isEnabled, setIsEnabled] = useState(true);
@@ -23,23 +24,93 @@ const VoiceInterface = ({ personality, onPersonalityChange }) => {
     { id: 'therapist', name: 'Therapist', description: 'Calm mental health support' },
   ];
 
-  const toggleListening = () => {
+  // Initialize voice service on component mount
+  useEffect(() => {
+    console.log('🎤 VoiceInterface: Initializing voice service');
+    
+    // Set up callbacks for voice service
+    voiceService.setCallbacks(
+      (transcript, isFinal) => {
+        setCurrentTranscript(transcript);
+        if (isFinal) {
+          setTimeout(() => setCurrentTranscript(''), 3000); // Clear after 3 seconds
+        }
+      },
+      (response) => {
+        setLastResponse(response);
+        setIsSpeaking(true);
+        setTimeout(() => setIsSpeaking(false), response.length * 50); // Estimate speaking time
+      }
+    );
+
+    // Set personality
+    voiceService.setPersonality(personality);
+
+    // Check if voice is supported
+    if (!voiceService.isSupported()) {
+      console.warn('🎤 Voice recognition not supported in this browser');
+      setIsEnabled(false);
+    }
+
+    // Sync listening state
+    const checkListeningState = () => {
+      setIsListening(voiceService.isListening);
+    };
+    const interval = setInterval(checkListeningState, 1000);
+    
+    return () => {
+      voiceService.stopListening();
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Update personality when it changes
+  useEffect(() => {
+    voiceService.setPersonality(personality);
+  }, [personality]);
+
+  const toggleListening = async () => {
     if (!isEnabled) return;
-    setIsListening(!isListening);
-    // TODO: Implement actual voice recognition
-    if (!isListening) {
-      setCurrentTranscript('Listening...');
-    } else {
-      setCurrentTranscript('');
+    
+    try {
+      if (!isListening) {
+        console.log('🎤 VoiceInterface: Starting listening');
+        await voiceService.startListening();
+        setIsListening(true);
+        setCurrentTranscript('Listening...');
+      } else {
+        console.log('🎤 VoiceInterface: Stopping listening');
+        voiceService.stopListening();
+        setIsListening(false);
+        setCurrentTranscript('');
+      }
+    } catch (error) {
+      console.error('🎤 VoiceInterface: Error toggling listening:', error);
+      setIsListening(false);
+      alert(`Voice recognition error: ${error.message}`);
     }
   };
 
   const toggleAlwaysListening = () => {
-    setAlwaysListening(!alwaysListening);
-    if (!alwaysListening) {
+    const newAlwaysListening = !alwaysListening;
+    setAlwaysListening(newAlwaysListening);
+    voiceService.setAlwaysListening(newAlwaysListening);
+    
+    if (newAlwaysListening) {
       setIsListening(true);
     } else {
       setIsListening(false);
+    }
+  };
+
+  const toggleEnabled = () => {
+    const newEnabled = !isEnabled;
+    setIsEnabled(newEnabled);
+    voiceService.setEnabled(newEnabled);
+    
+    if (!newEnabled) {
+      setIsListening(false);
+      setAlwaysListening(false);
     }
   };
 
@@ -62,7 +133,7 @@ const VoiceInterface = ({ personality, onPersonalityChange }) => {
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => setIsEnabled(!isEnabled)}
+              onClick={toggleEnabled}
               className={`p-2 rounded transition-colors ${
                 isEnabled ? 'text-green-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-800'
               }`}
@@ -98,6 +169,14 @@ const VoiceInterface = ({ personality, onPersonalityChange }) => {
               ))}
             </select>
           </div>
+
+          <button 
+            onClick={onShowChatLog}
+            className="p-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            title="Show chat log"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </button>
 
           <button className="p-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
             <Settings className="w-4 h-4" />

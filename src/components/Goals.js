@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Target, 
@@ -7,48 +7,17 @@ import {
   MoreHorizontal,
   CheckCircle,
   Clock,
-  Flag
+  Flag,
+  Loader2,
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 
 const Goals = () => {
-  const [goals, setGoals] = useState([
-    {
-      id: 1,
-      title: 'Exercise 5 times per week',
-      description: 'Maintain consistent workout routine for better health',
-      status: 'active',
-      target_value: 5,
-      current_value: 3,
-      unit: 'workouts',
-      deadline: '2024-01-31',
-      category: 'Health',
-      created_at: '2024-01-01T00:00:00Z'
-    },
-    {
-      id: 2,
-      title: 'Read 12 books this year',
-      description: 'Expand knowledge and improve reading habit',
-      status: 'active',
-      target_value: 12,
-      current_value: 1,
-      unit: 'books',
-      deadline: '2024-12-31',
-      category: 'Personal',
-      created_at: '2024-01-01T00:00:00Z'
-    },
-    {
-      id: 3,
-      title: 'Save $10,000',
-      description: 'Build emergency fund and financial security',
-      status: 'active',
-      target_value: 10000,
-      current_value: 3250,
-      unit: 'dollars',
-      deadline: '2024-06-30',
-      category: 'Financial',
-      created_at: '2024-01-01T00:00:00Z'
-    }
-  ]);
+  const [goals, setGoals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newGoal, setNewGoal] = useState({
@@ -61,37 +30,102 @@ const Goals = () => {
     category: ''
   });
 
-  const addGoal = () => {
+  // Load goals from database on component mount
+  useEffect(() => {
+    const fetchGoals = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const result = await window.electron?.invoke('goals:getAll');
+        setGoals(result || []);
+      } catch (err) {
+        console.error('Failed to load goals:', err);
+        setError('Failed to load goals. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchGoals();
+  }, []);
+
+  const addGoal = async () => {
     if (!newGoal.title.trim()) return;
     
-    const goal = {
-      id: Date.now(),
-      ...newGoal,
-      status: 'active',
-      target_value: parseFloat(newGoal.target_value),
-      current_value: parseFloat(newGoal.current_value) || 0,
-      created_at: new Date().toISOString()
-    };
-    
-    setGoals([goal, ...goals]);
-    setNewGoal({
-      title: '',
-      description: '',
-      target_value: '',
-      current_value: '0',
-      unit: '',
-      deadline: '',
-      category: ''
-    });
-    setShowAddForm(false);
+    try {
+      setSaving(true);
+      const goalData = {
+        title: newGoal.title,
+        description: newGoal.description || null,
+        target_value: parseFloat(newGoal.target_value),
+        current_value: parseFloat(newGoal.current_value) || 0,
+        unit: newGoal.unit || null,
+        deadline: newGoal.deadline || null,
+        category: newGoal.category || null,
+        status: 'active'
+      };
+      
+      const result = await window.electron?.invoke('goals:create', goalData);
+      
+      if (result) {
+        // Refresh goals from database to get the complete record with ID
+        const updatedGoals = await window.electron?.invoke('goals:getAll');
+        setGoals(updatedGoals || []);
+        
+        // Reset form
+        setNewGoal({
+          title: '',
+          description: '',
+          target_value: '',
+          current_value: '0',
+          unit: '',
+          deadline: '',
+          category: ''
+        });
+        setShowAddForm(false);
+      }
+    } catch (err) {
+      console.error('Failed to create goal:', err);
+      setError('Failed to create goal. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const updateProgress = (goalId, newValue) => {
-    setGoals(goals.map(goal => 
-      goal.id === goalId 
-        ? { ...goal, current_value: Math.max(0, newValue) }
-        : goal
-    ));
+  const updateProgress = async (goalId, newValue) => {
+    try {
+      setSaving(true);
+      const clampedValue = Math.max(0, newValue);
+      
+      await window.electron?.invoke('goals:update', goalId, { current_value: clampedValue });
+      
+      // Update local state optimistically
+      setGoals(goals.map(goal => 
+        goal.id === goalId ? { ...goal, current_value: clampedValue } : goal
+      ));
+    } catch (err) {
+      console.error('Failed to update goal progress:', err);
+      setError('Failed to update progress. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const retryLoad = () => {
+    setError(null);
+    const fetchGoals = async () => {
+      try {
+        setLoading(true);
+        const result = await window.electron?.invoke('goals:getAll');
+        setGoals(result || []);
+      } catch (err) {
+        console.error('Failed to load goals:', err);
+        setError('Failed to load goals. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchGoals();
   };
 
   const getProgressPercentage = (current, target) => {
@@ -113,6 +147,51 @@ const Goals = () => {
     return 'bg-red-500';
   };
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Goals</h1>
+            <p className="text-gray-400 mt-1">Track your long-term objectives and progress</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-400">Loading goals...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Goals</h1>
+            <p className="text-gray-400 mt-1">Track your long-term objectives and progress</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Error Loading Goals</h3>
+            <p className="text-gray-400 mb-4">{error}</p>
+            <button 
+              onClick={retryLoad}
+              className="button-primary"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -123,9 +202,14 @@ const Goals = () => {
         </div>
         <button
           onClick={() => setShowAddForm(true)}
-          className="button-primary flex items-center space-x-2"
+          disabled={saving}
+          className="button-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Plus className="w-4 h-4" />
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
           <span>Add Goal</span>
         </button>
       </div>
@@ -226,16 +310,22 @@ const Goals = () => {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => updateProgress(goal.id, goal.current_value - 1)}
-                      className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded text-white transition-colors"
+                      disabled={saving || goal.current_value <= 0}
+                      className="w-8 h-8 bg-gray-800 hover:bg-gray-700 rounded text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       -
                     </button>
-                    <span className="text-sm text-gray-400 min-w-[60px] text-center">
-                      Update progress
+                    <span className="text-sm text-gray-400 min-w-[80px] text-center">
+                      {saving ? (
+                        <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                      ) : (
+                        'Update progress'
+                      )}
                     </span>
                     <button
                       onClick={() => updateProgress(goal.id, goal.current_value + 1)}
-                      className="w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors"
+                      disabled={saving || goal.current_value >= goal.target_value}
+                      className="w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       +
                     </button>
@@ -262,7 +352,13 @@ const Goals = () => {
           <div className="text-center py-12">
             <Target className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-400 mb-2">No goals yet</h3>
-            <p className="text-gray-500">Create your first goal to start tracking your progress.</p>
+            <p className="text-gray-500 mb-4">Create your first goal to start tracking your progress.</p>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="button-primary"
+            >
+              Add Your First Goal
+            </button>
           </div>
         )}
       </div>
@@ -357,15 +453,24 @@ const Goals = () => {
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={() => setShowAddForm(false)}
-                className="button-secondary"
+                disabled={saving}
+                className="button-secondary disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={addGoal}
-                className="button-primary"
+                disabled={saving || !newGoal.title.trim() || !newGoal.target_value || parseFloat(newGoal.target_value) <= 0}
+                className="button-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
-                Add Goal
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <span>Add Goal</span>
+                )}
               </button>
             </div>
           </div>

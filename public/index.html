@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="OmniCoach - AI Productivity & Wellness Assistant" />
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self' data: blob:;
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:*;
+      style-src 'self' 'unsafe-inline' http://localhost:*;
+      img-src 'self' data: blob: http://localhost:*;
+      font-src 'self' data: http://localhost:*;
+      connect-src 'self' ws: wss: http://localhost:* https://api.elevenlabs.io https://api.openai.com https://api.anthropic.com http://localhost:11434;
+      media-src 'self' blob: data:;
+      worker-src 'self' blob:;
+    ">
     <title>OmniCoach</title>
   </head>
   <body class="bg-gray-950 text-white">

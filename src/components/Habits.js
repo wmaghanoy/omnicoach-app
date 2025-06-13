@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Calendar,
@@ -8,68 +8,17 @@ import {
   X,
   MoreHorizontal,
   Bell,
-  Repeat
+  Repeat,
+  Loader2,
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 
 const Habits = () => {
-  const [habits, setHabits] = useState([
-    {
-      id: 1,
-      name: 'Morning Meditation',
-      description: '10 minutes of mindfulness meditation',
-      frequency: 'daily',
-      target_count: 1,
-      streak: 7,
-      best_streak: 15,
-      category: 'Wellness',
-      reminder_time: '07:00',
-      is_active: true,
-      todayCompleted: true,
-      todayCount: 1
-    },
-    {
-      id: 2,
-      name: 'Exercise',
-      description: 'Any form of physical activity for 30+ minutes',
-      frequency: 'daily',
-      target_count: 1,
-      streak: 3,
-      best_streak: 12,
-      category: 'Health',
-      reminder_time: '18:00',
-      is_active: true,
-      todayCompleted: false,
-      todayCount: 0
-    },
-    {
-      id: 3,
-      name: 'Read',
-      description: 'Read for at least 30 minutes',
-      frequency: 'daily',
-      target_count: 1,
-      streak: 5,
-      best_streak: 8,
-      category: 'Learning',
-      reminder_time: '21:00',
-      is_active: true,
-      todayCompleted: true,
-      todayCount: 1
-    },
-    {
-      id: 4,
-      name: 'Drink Water',
-      description: 'Drink 8 glasses of water',
-      frequency: 'daily',
-      target_count: 8,
-      streak: 2,
-      best_streak: 5,
-      category: 'Health',
-      reminder_time: '09:00',
-      is_active: true,
-      todayCompleted: false,
-      todayCount: 5
-    }
-  ]);
+  const [habits, setHabits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newHabit, setNewHabit] = useState({
@@ -87,66 +36,163 @@ const Habits = () => {
     { value: 'monthly', label: 'Monthly' }
   ];
 
-  const addHabit = () => {
+  // Load habits with today's entries from database
+  useEffect(() => {
+    const fetchHabits = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Get habits with today's completion status
+        const result = await window.electron?.invoke('habits:getTodayEntries');
+        
+        // Transform the data to match component state format
+        const habitsWithToday = (result || []).map(habit => ({
+          ...habit,
+          todayCompleted: habit.completed === 1,
+          todayCount: habit.count || 0,
+          // Calculate streaks (simplified for now, would need proper calculation in backend)
+          streak: habit.streak || 0,
+          best_streak: habit.best_streak || 0
+        }));
+        
+        setHabits(habitsWithToday);
+      } catch (err) {
+        console.error('Failed to load habits:', err);
+        setError('Failed to load habits. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHabits();
+  }, []);
+
+  const addHabit = async () => {
     if (!newHabit.name.trim()) return;
     
-    const habit = {
-      id: Date.now(),
-      ...newHabit,
-      target_count: parseInt(newHabit.target_count) || 1,
-      streak: 0,
-      best_streak: 0,
-      is_active: true,
-      todayCompleted: false,
-      todayCount: 0,
-      created_at: new Date().toISOString()
+    try {
+      setSaving(true);
+      const habitData = {
+        name: newHabit.name,
+        description: newHabit.description || null,
+        frequency: newHabit.frequency,
+        target_count: parseInt(newHabit.target_count) || 1,
+        category: newHabit.category || null,
+        reminder_time: newHabit.reminder_time || null
+      };
+      
+      const result = await window.electron?.invoke('habits:create', habitData);
+      
+      if (result) {
+        // Refresh habits from database
+        const updatedHabits = await window.electron?.invoke('habits:getTodayEntries');
+        const habitsWithToday = (updatedHabits || []).map(habit => ({
+          ...habit,
+          todayCompleted: habit.completed === 1,
+          todayCount: habit.count || 0,
+          streak: habit.streak || 0,
+          best_streak: habit.best_streak || 0
+        }));
+        setHabits(habitsWithToday);
+        
+        // Reset form
+        setNewHabit({
+          name: '',
+          description: '',
+          frequency: 'daily',
+          target_count: '1',
+          category: '',
+          reminder_time: ''
+        });
+        setShowAddForm(false);
+      }
+    } catch (err) {
+      console.error('Failed to create habit:', err);
+      setError('Failed to create habit. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleHabitCompletion = async (habitId) => {
+    try {
+      setSaving(true);
+      const habit = habits.find(h => h.id === habitId);
+      if (!habit) return;
+
+      const newCompleted = !habit.todayCompleted;
+      const newCount = newCompleted ? habit.target_count : 0;
+      const today = new Date().toISOString().split('T')[0];
+      
+      await window.electron?.invoke('habits:logEntry', 
+        habitId, today, newCompleted, newCount, null
+      );
+      
+      // Update local state optimistically
+      setHabits(habits.map(h => 
+        h.id === habitId 
+          ? { ...h, todayCompleted: newCompleted, todayCount: newCount }
+          : h
+      ));
+    } catch (err) {
+      console.error('Failed to log habit:', err);
+      setError('Failed to update habit. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateHabitCount = async (habitId, increment) => {
+    try {
+      setSaving(true);
+      const habit = habits.find(h => h.id === habitId);
+      if (!habit) return;
+
+      const newCount = Math.max(0, habit.todayCount + increment);
+      const isCompleted = newCount >= habit.target_count;
+      const today = new Date().toISOString().split('T')[0];
+      
+      await window.electron?.invoke('habits:logEntry', 
+        habitId, today, isCompleted, newCount, null
+      );
+      
+      // Update local state optimistically
+      setHabits(habits.map(h => 
+        h.id === habitId 
+          ? { ...h, todayCount: newCount, todayCompleted: isCompleted }
+          : h
+      ));
+    } catch (err) {
+      console.error('Failed to update habit count:', err);
+      setError('Failed to update habit count. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const retryLoad = () => {
+    setError(null);
+    const fetchHabits = async () => {
+      try {
+        setLoading(true);
+        const result = await window.electron?.invoke('habits:getTodayEntries');
+        const habitsWithToday = (result || []).map(habit => ({
+          ...habit,
+          todayCompleted: habit.completed === 1,
+          todayCount: habit.count || 0,
+          streak: habit.streak || 0,
+          best_streak: habit.best_streak || 0
+        }));
+        setHabits(habitsWithToday);
+      } catch (err) {
+        console.error('Failed to load habits:', err);
+        setError('Failed to load habits. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     };
-    
-    setHabits([habit, ...habits]);
-    setNewHabit({
-      name: '',
-      description: '',
-      frequency: 'daily',
-      target_count: '1',
-      category: '',
-      reminder_time: ''
-    });
-    setShowAddForm(false);
-  };
-
-  const toggleHabitCompletion = (habitId) => {
-    setHabits(habits.map(habit => {
-      if (habit.id === habitId) {
-        const newCompleted = !habit.todayCompleted;
-        const newStreak = newCompleted ? habit.streak + 1 : Math.max(0, habit.streak - 1);
-        const newBestStreak = Math.max(habit.best_streak, newStreak);
-        
-        return {
-          ...habit,
-          todayCompleted: newCompleted,
-          todayCount: newCompleted ? habit.target_count : 0,
-          streak: newStreak,
-          best_streak: newBestStreak
-        };
-      }
-      return habit;
-    }));
-  };
-
-  const updateHabitCount = (habitId, increment) => {
-    setHabits(habits.map(habit => {
-      if (habit.id === habitId) {
-        const newCount = Math.max(0, habit.todayCount + increment);
-        const isCompleted = newCount >= habit.target_count;
-        
-        return {
-          ...habit,
-          todayCount: newCount,
-          todayCompleted: isCompleted
-        };
-      }
-      return habit;
-    }));
+    fetchHabits();
   };
 
   const getStreakColor = (streak) => {
@@ -166,6 +212,51 @@ const Habits = () => {
     return habits.reduce((sum, habit) => sum + habit.streak, 0);
   };
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Habits</h1>
+            <p className="text-gray-400 mt-1">Build consistency and track your daily routines</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <span className="ml-3 text-gray-400">Loading habits...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">Habits</h1>
+            <p className="text-gray-400 mt-1">Build consistency and track your daily routines</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <AlertCircle className="w-12 h-12 text-red-500" />
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-red-400 mb-2">Error Loading Habits</h3>
+            <p className="text-gray-400 mb-4">{error}</p>
+            <button 
+              onClick={retryLoad}
+              className="button-primary"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -176,9 +267,14 @@ const Habits = () => {
         </div>
         <button
           onClick={() => setShowAddForm(true)}
-          className="button-primary flex items-center space-x-2"
+          disabled={saving}
+          className="button-primary flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <Plus className="w-4 h-4" />
+          {saving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
           <span>Add Habit</span>
         </button>
       </div>
@@ -227,13 +323,18 @@ const Habits = () => {
                 <div className="flex items-start space-x-4 flex-1">
                   <button
                     onClick={() => toggleHabitCompletion(habit.id)}
-                    className={`mt-1 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                    disabled={saving}
+                    className={`mt-1 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all disabled:opacity-50 ${
                       habit.todayCompleted 
                         ? 'bg-green-500 border-green-500 text-white' 
                         : 'border-gray-600 hover:border-gray-500'
                     }`}
                   >
-                    {habit.todayCompleted && <Check className="w-4 h-4" />}
+                    {saving ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      habit.todayCompleted && <Check className="w-4 h-4" />
+                    )}
                   </button>
 
                   <div className="flex-1">
@@ -278,13 +379,22 @@ const Habits = () => {
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() => updateHabitCount(habit.id, -1)}
-                            className="w-6 h-6 bg-gray-800 hover:bg-gray-700 rounded text-white transition-colors text-sm"
+                            disabled={saving || habit.todayCount <= 0}
+                            className="w-6 h-6 bg-gray-800 hover:bg-gray-700 rounded text-white transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             -
                           </button>
+                          <span className="text-xs text-gray-400 min-w-[40px] text-center">
+                            {saving ? (
+                              <Loader2 className="w-3 h-3 animate-spin mx-auto" />
+                            ) : (
+                              'Count'
+                            )}
+                          </span>
                           <button
                             onClick={() => updateHabitCount(habit.id, 1)}
-                            className="w-6 h-6 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors text-sm"
+                            disabled={saving}
+                            className="w-6 h-6 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             +
                           </button>
@@ -323,7 +433,13 @@ const Habits = () => {
           <div className="text-center py-12">
             <Repeat className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-400 mb-2">No habits yet</h3>
-            <p className="text-gray-500">Create your first habit to start building consistency.</p>
+            <p className="text-gray-500 mb-4">Create your first habit to start building consistency.</p>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="button-primary"
+            >
+              Add Your First Habit
+            </button>
           </div>
         )}
       </div>
@@ -412,15 +528,24 @@ const Habits = () => {
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={() => setShowAddForm(false)}
-                className="button-secondary"
+                disabled={saving}
+                className="button-secondary disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={addHabit}
-                className="button-primary"
+                disabled={saving || !newHabit.name.trim()}
+                className="button-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
-                Add Habit
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <span>Add Habit</span>
+                )}
               </button>
             </div>
           </div>

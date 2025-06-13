@@ -30,15 +30,30 @@ contextBridge.exposeInMainWorld('electron', {
       'feedback:generate',
       'feedback:getRecent',
       'feedback:rate',
-      'voice:processCommand'
+      'voice:processCommand',
+      'get-app-path',
+      'show-error-dialog'
     ];
     
     if (validChannels.includes(channel)) {
-      return ipcRenderer.invoke(channel, ...args);
+      return ipcRenderer.invoke(channel, ...args).catch(error => {
+        console.error(`IPC Error on channel ${channel}:`, error);
+        throw error;
+      });
     } else {
       console.error('Invalid IPC channel:', channel);
       return Promise.reject(new Error(`Invalid IPC channel: ${channel}`));
     }
+  },
+  
+  // Expose platform info for debugging
+  platform: process.platform,
+  
+  // Expose version info
+  versions: {
+    node: process.versions.node,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome
   }
 });
 
