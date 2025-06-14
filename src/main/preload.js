@@ -30,9 +30,11 @@ contextBridge.exposeInMainWorld('electron', {
       'feedback:generate',
       'feedback:getRecent',
       'feedback:rate',
-      'voice:processCommand',
       'get-app-path',
-      'show-error-dialog'
+      'show-error-dialog',
+      'goals:delete',
+      'habits:update',
+      'habits:delete'
     ];
     
     if (validChannels.includes(channel)) {

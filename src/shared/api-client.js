@@ -193,22 +193,22 @@ class ApiClient {
   }
 
   // Habit entries operations
-  async getHabitEntries(habitId, date) {
+  async getHabitEntries() {
     if (!this.isElectron) return [];
     
     try {
-      return await window.electron.invoke('habitEntries:get', habitId, date);
+      return await window.electron.invoke('habits:getTodayEntries');
     } catch (error) {
       console.error('Failed to get habit entries:', error);
       return [];
     }
   }
 
-  async logHabitEntry(habitId, date, completed) {
+  async logHabitEntry(habitId, date, completed, count = 1, notes = '') {
     if (!this.isElectron) return null;
     
     try {
-      return await window.electron.invoke('habitEntries:log', habitId, date, completed);
+      return await window.electron.invoke('habits:logEntry', habitId, date, completed, count, notes);
     } catch (error) {
       console.error('Failed to log habit entry:', error);
       throw error;
@@ -234,7 +234,7 @@ class ApiClient {
     if (!this.isElectron) return null;
     
     try {
-      return await window.electron.invoke('system:getStats');
+      return await window.electron.invoke('monitoring:getTodayStats');
     } catch (error) {
       console.error('Failed to get system stats:', error);
       return null;
@@ -242,11 +242,11 @@ class ApiClient {
   }
 
   // Feedback system
-  async getFeedback() {
+  async getFeedback(limit = 10) {
     if (!this.isElectron) return [];
     
     try {
-      return await window.electron.invoke('feedback:get');
+      return await window.electron.invoke('feedback:getRecent', limit);
     } catch (error) {
       console.error('Failed to get feedback:', error);
       return [];

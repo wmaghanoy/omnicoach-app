@@ -287,6 +287,11 @@ ipcMain.handle('goals:update', async (event, id, updates) => {
   return GoalModel.update(id, updates);
 });
 
+ipcMain.handle('goals:delete', async (event, id) => {
+  const { GoalModel } = require('../shared/models');
+  return GoalModel.delete(id);
+});
+
 // Habit operations
 ipcMain.handle('habits:getAll', async () => {
   const { HabitModel } = require('../shared/models');
@@ -306,6 +311,16 @@ ipcMain.handle('habits:create', async (event, habit) => {
 ipcMain.handle('habits:logEntry', async (event, habitId, date, completed, count, notes) => {
   const { HabitModel } = require('../shared/models');
   return HabitModel.logEntry(habitId, date, completed, count, notes);
+});
+
+ipcMain.handle('habits:update', async (event, id, updates) => {
+  const { HabitModel } = require('../shared/models');
+  return HabitModel.update(id, updates);
+});
+
+ipcMain.handle('habits:delete', async (event, id) => {
+  const { HabitModel } = require('../shared/models');
+  return HabitModel.delete(id);
 });
 
 // LLM operations
