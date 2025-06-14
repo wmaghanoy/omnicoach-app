@@ -29,25 +29,27 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
     console.log('🎤 VoiceInterface: Initializing voice service');
     
     // Set up callbacks for voice service
-    voiceService.setCallbacks(
-      (transcript, isFinal) => {
-        setCurrentTranscript(transcript);
-        if (isFinal) {
-          setTimeout(() => setCurrentTranscript(''), 3000); // Clear after 3 seconds
-        }
-      },
-      (response) => {
-        setLastResponse(response);
-        setIsSpeaking(true);
-        setTimeout(() => setIsSpeaking(false), response.length * 50); // Estimate speaking time
+    voiceService.setTranscriptCallback((finalTranscript, interimTranscript) => {
+      if (interimTranscript) {
+        setCurrentTranscript(interimTranscript);
       }
-    );
+      if (finalTranscript) {
+        setCurrentTranscript(finalTranscript);
+        setTimeout(() => setCurrentTranscript(''), 3000); // Clear after 3 seconds
+      }
+    });
+
+    voiceService.setResponseCallback((response) => {
+      setLastResponse(response);
+      setIsSpeaking(true);
+      setTimeout(() => setIsSpeaking(false), response.length * 50); // Estimate speaking time
+    });
 
     // Set personality
     voiceService.setPersonality(personality);
 
     // Check if voice is supported
-    if (!voiceService.isSupported()) {
+    if (!voiceService.recognition) {
       console.warn('🎤 Voice recognition not supported in this browser');
       setIsEnabled(false);
     }
@@ -106,11 +108,11 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
   const toggleEnabled = () => {
     const newEnabled = !isEnabled;
     setIsEnabled(newEnabled);
-    voiceService.setEnabled(newEnabled);
     
     if (!newEnabled) {
       setIsListening(false);
       setAlwaysListening(false);
+      voiceService.stopListening();
     }
   };
 
