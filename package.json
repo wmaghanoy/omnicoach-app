@@ -7,7 +7,10 @@
   "author": "Wes",
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"npm run dev:electron\" \"npm run dev:react\"",
+    "dev": "npm run dev:sequential",
+    "dev:concurrent": "concurrently \"npm run dev:electron\" \"npm run dev:react\"",
+    "dev:sequential": "npm-run-all --parallel --race dev:react dev:electron:delayed",
+    "dev:electron:delayed": "wait-on http://localhost:3281 && npm run dev:electron",
     "dev:electron": "cross-env NODE_ENV=development electron .",
     "dev:react": "cross-env BROWSER=none PORT=3281 react-scripts start",
     "build": "react-scripts build",

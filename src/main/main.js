@@ -6,6 +6,12 @@ const isDev = process.env.NODE_ENV === 'development';
 let mainWindow;
 
 function createWindow() {
+  // GPU error handling - disable hardware acceleration if GPU issues detected
+  if (process.env.DISABLE_GPU || process.argv.includes('--disable-gpu')) {
+    console.log('🖥️ Hardware acceleration disabled via flag');
+    app.disableHardwareAcceleration();
+  }
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -17,7 +23,10 @@ function createWindow() {
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js'),
       sandbox: false,
-      webSecurity: true
+      webSecurity: true,
+      // GPU fallback options
+      offscreen: false,
+      enableWebSQL: false
     },
     show: false,
     backgroundColor: '#0f0f0f'
@@ -61,25 +70,48 @@ function createWindow() {
 
   // In development, wait for React dev server to start
   if (isDev) {
-    // Wait for React dev server to be ready
+    // Enhanced waiting mechanism with progressive delays and better detection
     const waitForServer = async () => {
-      const maxAttempts = 60; // Increased from 20 to 60 (30 seconds)
+      const maxAttempts = 40; // Reduced to 40 (60 seconds max with progressive delays)
+      let delay = 500; // Start with 500ms delay
+      
       for (let i = 0; i < maxAttempts; i++) {
         try {
           await new Promise((resolve, reject) => {
             const req = http.get('http://localhost:3281', (res) => {
-              resolve(res);
+              // Check if we're getting the React dev server specifically
+              if (res.statusCode === 200) {
+                resolve(res);
+              } else {
+                reject(new Error(`Unexpected status code: ${res.statusCode}`));
+              }
             });
             req.on('error', reject);
-            req.setTimeout(2000, () => reject(new Error('Timeout'))); // Increased timeout
+            req.setTimeout(3000, () => reject(new Error('Request timeout')));
           });
-          console.log('✅ React dev server is ready!');
+          console.log('✅ React dev server is ready and responding!');
           return true;
         } catch (error) {
-          // Server not ready yet
-          console.log(`⏳ Waiting for React dev server... (${i + 1}/${maxAttempts})`);
+          // Progressive delay - start fast, get slower
+          if (i < 10) {
+            delay = 500; // First 10 attempts: 500ms
+          } else if (i < 20) {
+            delay = 1000; // Next 10 attempts: 1s
+          } else {
+            delay = 2000; // Final attempts: 2s
+          }
+          
+          console.log(`⏳ Waiting for React dev server... (${i + 1}/${maxAttempts}) - retry in ${delay}ms`);
+          
+          // Special handling for specific errors
+          if (error.code === 'ECONNREFUSED') {
+            console.log('🔌 Connection refused - React server not started yet');
+          } else if (error.code === 'TIMEOUT') {
+            console.log('⏰ Request timeout - server may be overloaded');
+          }
         }
-        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       return false;
     };
@@ -135,13 +167,55 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     // Clean up services before quitting
-    const systemMonitor = require('../shared/system-monitor');
-    const feedbackSystem = require('../shared/feedback-system');
-    
-    systemMonitor.stopMonitoring();
-    feedbackSystem.stop();
+    console.log('🧹 Cleaning up services before quit...');
+    try {
+      const systemMonitor = require('../shared/system-monitor');
+      const feedbackSystem = require('../shared/feedback-system');
+      
+      systemMonitor.stopMonitoring();
+      feedbackSystem.stop();
+      console.log('✅ Services cleaned up successfully');
+    } catch (error) {
+      console.error('❌ Error during cleanup:', error);
+    }
     
     app.quit();
+  }
+});
+
+// Enhanced process management
+app.on('before-quit', (event) => {
+  console.log('🛑 App is about to quit, performing final cleanup...');
+  // Allow the quit to proceed after cleanup
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, graceful shutdown...');
+  app.quit();
+});
+
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, graceful shutdown...');
+  app.quit();
+});
+
+// GPU process crash handler
+app.on('gpu-process-crashed', (event, killed) => {
+  console.log('💥 GPU process crashed, killed:', killed);
+  console.log('🔄 Attempting to recover...');
+  
+  // Disable hardware acceleration and restart if needed
+  if (!killed) {
+    app.disableHardwareAcceleration();
+    console.log('🖥️ Hardware acceleration disabled due to GPU crash');
+  }
+});
+
+// Child process crash handler  
+app.on('child-process-gone', (event, details) => {
+  console.log('💥 Child process gone:', details);
+  if (details.type === 'GPU') {
+    console.log('🔄 GPU process crashed, considering hardware acceleration disable');
   }
 });
 
@@ -285,4 +359,10 @@ ipcMain.handle('feedback:getRecent', async (event, limit) => {
 ipcMain.handle('feedback:rate', async (event, feedbackId, rating) => {
   const feedbackSystem = require('../shared/feedback-system');
   return feedbackSystem.rateFeedback(feedbackId, rating);
+});
+
+// LLM operations
+ipcMain.handle('llm:generateResponse', async (event, message, context, options) => {
+  const llmService = require('../shared/llm-service');
+  return llmService.generateResponse(message, context, options);
 });

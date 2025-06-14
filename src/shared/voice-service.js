@@ -174,10 +174,8 @@ class VoiceService {
 
     async getWakeWord() {
       try {
-        if (window.electron) {
-          return await window.electron.invoke('settings:get', 'wakeWord') || 'Hey Coach';
-        }
-        return 'Hey Coach';
+        const { default: apiClient } = await import('./api-client.js');
+        return await apiClient.getSetting('wakeWord') || 'Hey Coach';
       } catch (error) {
         console.error('Failed to get wake word:', error);
         return 'Hey Coach';
@@ -188,11 +186,11 @@ class VoiceService {
       try {
         console.log("🤖 Calling LLM service with message:", userMessage);
         
-        // Get LLM service
-        const { default: llmService } = await import('./llm-service.js');
+        // Use API client for LLM calls to avoid Node.js imports
+        const { default: apiClient } = await import('./api-client.js');
         
         // Get the response
-        const response = await llmService.generateResponse(
+        const response = await apiClient.generateLLMResponse(
           userMessage,
           {
             chatHistory: this.chatHistory,
@@ -230,20 +228,14 @@ class VoiceService {
     async speak(text) {
       console.log("🔊 ElevenLabs TTS starting...");
       
-      // Get ElevenLabs settings from database
+      // Get ElevenLabs settings via API client
       let apiKey, voiceId, useElevenLabs;
       
       try {
-        if (window.electron) {
-          apiKey = await window.electron.invoke('settings:get', 'elevenLabsApiKey');
-          voiceId = await window.electron.invoke('settings:get', 'elevenLabsVoiceId') || "21m00Tcm4TlvDq8ikWAM";
-          useElevenLabs = await window.electron.invoke('settings:get', 'useElevenLabs') === 'true';
-        } else {
-          // Fallback to localStorage for web environments
-          apiKey = localStorage.getItem("elevenLabsApiKey");
-          voiceId = localStorage.getItem("elevenLabsVoiceId") || "21m00Tcm4TlvDq8ikWAM";
-          useElevenLabs = localStorage.getItem("useElevenLabs") === 'true';
-        }
+        const { default: apiClient } = await import('./api-client.js');
+        apiKey = await apiClient.getSetting('elevenLabsApiKey');
+        voiceId = await apiClient.getSetting('elevenLabsVoiceId') || "21m00Tcm4TlvDq8ikWAM";
+        useElevenLabs = await apiClient.getSetting('useElevenLabs') === 'true';
       } catch (error) {
         console.error('❌ Failed to get ElevenLabs settings:', error);
         throw new Error('ElevenLabs settings not available');
@@ -286,10 +278,9 @@ class VoiceService {
           // Get volume setting
           let volume = 0.8; // default
           try {
-            if (window.electron) {
-              const volumeSetting = await window.electron.invoke('settings:get', 'voiceVolume');
-              volume = (parseInt(volumeSetting) || 80) / 100;
-            }
+            const { default: apiClient } = await import('./api-client.js');
+            const volumeSetting = await apiClient.getSetting('voiceVolume');
+            volume = (parseInt(volumeSetting) || 80) / 100;
           } catch (error) {
             console.error('Failed to get volume setting:', error);
           }
