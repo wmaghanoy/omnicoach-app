@@ -114,6 +114,25 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
     }
   };
 
+  const testVoice = async () => {
+    try {
+      setIsSpeaking(true);
+      setLastResponse('Testing ElevenLabs voice...');
+      console.log('🔊 Testing ElevenLabs voice output');
+      
+      const testMessage = `Hello! This is a test of your custom ElevenLabs voice. The current time is ${new Date().toLocaleTimeString()}. If you can hear this clearly, your ElevenLabs integration is working perfectly!`;
+      
+      await voiceService.speak(testMessage);
+      setLastResponse('Voice test completed successfully!');
+      setIsSpeaking(false);
+    } catch (error) {
+      console.error('🔊 Voice test failed:', error);
+      setLastResponse(`Voice test failed: ${error.message}`);
+      setIsSpeaking(false);
+      alert(`Voice test failed: ${error.message}`);
+    }
+  };
+
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-4">
       <div className="flex items-center justify-between">
@@ -176,6 +195,14 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
             title="Show chat log"
           >
             <MessageCircle className="w-4 h-4" />
+          </button>
+
+          <button 
+            onClick={testVoice}
+            className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm transition-colors"
+            title="Test ElevenLabs voice"
+          >
+            Test Voice
           </button>
 
           <button className="p-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">
