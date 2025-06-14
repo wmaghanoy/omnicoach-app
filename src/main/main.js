@@ -376,9 +376,3 @@ ipcMain.handle('feedback:rate', async (event, feedbackId, rating) => {
   const feedbackSystem = require('../shared/feedback-system');
   return feedbackSystem.rateFeedback(feedbackId, rating);
 });
-
-// LLM operations
-ipcMain.handle('llm:generateResponse', async (event, message, context, options) => {
-  const llmService = require('../shared/llm-service');
-  return llmService.generateResponse(message, context, options);
-});
