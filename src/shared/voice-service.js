@@ -219,9 +219,24 @@ class VoiceService {
     }
 
     async speak(text) {
-      const apiKey = localStorage.getItem("elevenlabs_api_key");
-      const voiceId = localStorage.getItem("elevenlabs_voice_id") || "21m00Tcm4TlvDq8ikWAM"; // Default voice ID
-      const useElevenLabs = localStorage.getItem("useElevenLabs") === 'true';
+      // Get settings from database via Electron
+      let apiKey, voiceId, useElevenLabs;
+      
+      try {
+        if (window.electron) {
+          apiKey = await window.electron.invoke('settings:get', 'elevenLabsApiKey');
+          voiceId = await window.electron.invoke('settings:get', 'elevenLabsVoiceId') || "21m00Tcm4TlvDq8ikWAM";
+          useElevenLabs = await window.electron.invoke('settings:get', 'useElevenLabs') === 'true';
+        } else {
+          // Fallback to localStorage for web environments
+          apiKey = localStorage.getItem("elevenLabsApiKey");
+          voiceId = localStorage.getItem("elevenLabsVoiceId") || "21m00Tcm4TlvDq8ikWAM";
+          useElevenLabs = localStorage.getItem("useElevenLabs") === 'true';
+        }
+      } catch (error) {
+        console.error('Failed to get ElevenLabs settings:', error);
+        useElevenLabs = false;
+      }
       
       // Check if ElevenLabs should be used and API key is available
       if (useElevenLabs && apiKey && apiKey !== "your-api-key" && apiKey.trim() !== "") {
@@ -271,7 +286,21 @@ class VoiceService {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
       utterance.pitch = 1.0;
-      utterance.volume = (localStorage.getItem("voiceVolume") || 80) / 100;
+      
+      // Get voice volume from settings
+      let voiceVolume = 80; // default
+      try {
+        if (window.electron) {
+          const volume = await window.electron.invoke('settings:get', 'voiceVolume');
+          voiceVolume = parseInt(volume) || 80;
+        } else {
+          voiceVolume = parseInt(localStorage.getItem("voiceVolume")) || 80;
+        }
+      } catch (error) {
+        console.error('Failed to get voice volume setting:', error);
+      }
+      
+      utterance.volume = voiceVolume / 100;
       this.synthesis.speak(utterance);
     }
 

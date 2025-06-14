@@ -245,6 +245,52 @@ const Settings = () => {
       </div>
 
       <div className="card">
+        <h3 className="text-lg font-semibold mb-4">ElevenLabs Text-to-Speech</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              ElevenLabs API Key
+              <Key className="w-4 h-4 inline ml-1" />
+            </label>
+            <input
+              type="password"
+              value={settings.elevenLabsApiKey || ''}
+              onChange={(e) => updateSetting('elevenLabsApiKey', e.target.value)}
+              className="input-primary w-full"
+              placeholder="Enter your ElevenLabs API key"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Get your API key from ElevenLabs dashboard
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Voice ID</label>
+            <input
+              type="text"
+              value={settings.elevenLabsVoiceId || ''}
+              onChange={(e) => updateSetting('elevenLabsVoiceId', e.target.value)}
+              className="input-primary w-full"
+              placeholder="21m00Tcm4TlvDq8ikWAM"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your custom voice ID from ElevenLabs
+            </p>
+          </div>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={getBooleanValue(settings.useElevenLabs)}
+              onChange={(e) => updateSetting('useElevenLabs', e.target.checked.toString())}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-gray-300">Use ElevenLabs for text-to-speech</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="card">
         <h3 className="text-lg font-semibold mb-4">AI Personality</h3>
         <div className="space-y-4">
           <div>
