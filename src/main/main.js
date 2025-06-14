@@ -29,9 +29,9 @@ function createWindow() {
       enableWebSQL: false,
       // Enhanced permissions for speech recognition
       allowRunningInsecureContent: false,
-      experimentalFeatures: true,
+      experimentalFeatures: false,
       // Enable speech recognition APIs
-      plugins: true,
+      plugins: false,
       nativeWindowOpen: true
     },
     show: false,
@@ -63,7 +63,7 @@ function createWindow() {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' data: blob:; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+          "script-src 'self' 'unsafe-inline'; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: blob:; " +
           "font-src 'self' data:; " +
@@ -132,7 +132,23 @@ function createWindow() {
         mainWindow.loadURL(startUrl);
       } else {
         console.error('React dev server failed to start');
-        mainWindow.loadURL(`data:text/html,<h1>Failed to connect to React dev server at ${startUrl}</h1>`);
+        const errorHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>OmniCoach - Connection Error</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #0f0f0f; color: white; }
+    h1 { color: #ef4444; }
+    p { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <h1>Failed to connect to React dev server</h1>
+  <p>Unable to connect to <code>${startUrl}</code></p>
+  <p>Please ensure the React development server is running and try restarting the application.</p>
+</body>
+</html>`;
+        mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
       }
     });
   } else {
@@ -160,21 +176,33 @@ function createWindow() {
 // Initialize database and create window
 let db = null;
 app.whenReady().then(async () => {
-  const { initDatabase } = require('../shared/database');
   try {
+    // Initialize database first
+    const { initDatabase } = require('../shared/database');
     db = initDatabase();
     console.log('Database initialized successfully');
     
-    // Initialize system services
-    const systemMonitor = require('../shared/system-monitor');
-    const feedbackSystem = require('../shared/feedback-system');
+    // Initialize system services with error isolation
+    try {
+      const systemMonitor = require('../shared/system-monitor');
+      await systemMonitor.startMonitoring();
+      console.log('System monitoring started');
+    } catch (error) {
+      console.warn('System monitoring failed to start:', error.message);
+    }
     
-    await systemMonitor.startMonitoring();
-    await feedbackSystem.initialize();
+    try {
+      const feedbackSystem = require('../shared/feedback-system');
+      await feedbackSystem.initialize();
+      console.log('Feedback system initialized');
+    } catch (error) {
+      console.warn('Feedback system failed to initialize:', error.message);
+    }
     
     console.log('System services initialized');
   } catch (error) {
-    console.error('Failed to initialize database or services:', error);
+    console.error('Critical startup failure:', error);
+    // Still create window but with degraded functionality
   }
   
   createWindow();
