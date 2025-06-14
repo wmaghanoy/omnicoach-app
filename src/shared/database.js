@@ -135,6 +135,12 @@ function initDatabase() {
   insertSetting.run('budget_warnings', 'true');
   insertSetting.run('default_llm', 'ollama');
   insertSetting.run('feedback_frequency', '3');
+  
+  // ElevenLabs settings (disabled by default until API key is provided)
+  insertSetting.run('useElevenLabs', 'false');
+  insertSetting.run('elevenLabsApiKey', '');
+  insertSetting.run('elevenLabsVoiceId', '21m00Tcm4TlvDq8ikWAM');
+  insertSetting.run('voiceVolume', '80');
 
   // Insert default voice personalities
   const insertPersonality = db.prepare(`

@@ -117,10 +117,10 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
   const testVoice = async () => {
     try {
       setIsSpeaking(true);
-      setLastResponse('Testing ElevenLabs voice...');
-      console.log('🔊 Testing ElevenLabs voice output');
+      setLastResponse('Testing voice output...');
+      console.log('🔊 Testing voice output');
       
-      const testMessage = `Hello! This is a test of your custom ElevenLabs voice. The current time is ${new Date().toLocaleTimeString()}. If you can hear this clearly, your ElevenLabs integration is working perfectly!`;
+      const testMessage = `Hello! This is a voice test. The current time is ${new Date().toLocaleTimeString()}. If you can hear this clearly, your voice system is working!`;
       
       await voiceService.speak(testMessage);
       setLastResponse('Voice test completed successfully!');
@@ -129,7 +129,16 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
       console.error('🔊 Voice test failed:', error);
       setLastResponse(`Voice test failed: ${error.message}`);
       setIsSpeaking(false);
-      alert(`Voice test failed: ${error.message}`);
+      
+      // Provide helpful error guidance
+      let helpMessage = error.message;
+      if (error.message.includes('ElevenLabs API key')) {
+        helpMessage += '\n\nTo fix this: Go to Settings → Voice & AI → Add your ElevenLabs API key and enable ElevenLabs.';
+      } else if (error.message.includes('ElevenLabs is disabled')) {
+        helpMessage += '\n\nNote: Using browser text-to-speech fallback. For better quality, enable ElevenLabs in Settings.';
+      }
+      
+      alert(helpMessage);
     }
   };
 
@@ -200,7 +209,7 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
           <button 
             onClick={testVoice}
             className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm transition-colors"
-            title="Test ElevenLabs voice"
+            title="Test voice output"
           >
             Test Voice
           </button>

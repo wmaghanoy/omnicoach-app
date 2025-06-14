@@ -9,6 +9,7 @@ import Analytics from './components/Analytics';
 import Settings from './components/Settings';
 import VoiceInterface from './components/VoiceInterface';
 import VoiceChatLog from './components/VoiceChatLog';
+import ErrorBoundary from './components/ErrorBoundary';
 import voiceService from './shared/voice-service';
 
 function App() {
@@ -26,46 +27,54 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <div className="flex h-screen bg-gray-950 text-white">
-        <Sidebar 
-          collapsed={sidebarCollapsed} 
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
-        />
-        
-        <main className={`flex-1 flex flex-col transition-all duration-300 ${
-          sidebarCollapsed ? 'ml-16' : 'ml-64'
-        }`}>
-          <div className="flex-1 overflow-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/goals" element={<Goals />} />
-              <Route path="/habits" element={<Habits />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </div>
-          
-          <VoiceInterface 
-            personality={currentPersonality}
-            onPersonalityChange={setCurrentPersonality}
-            onShowChatLog={() => setShowChatLog(true)}
+    <ErrorBoundary>
+      <Router>
+        <div className="flex h-screen bg-gray-950 text-white">
+          <Sidebar 
+            collapsed={sidebarCollapsed} 
+            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
           />
-        </main>
+          
+          <main className={`flex-1 flex flex-col transition-all duration-300 ${
+            sidebarCollapsed ? 'ml-16' : 'ml-64'
+          }`}>
+            <div className="flex-1 overflow-auto">
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/tasks" element={<Tasks />} />
+                  <Route path="/goals" element={<Goals />} />
+                  <Route path="/habits" element={<Habits />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </ErrorBoundary>
+            </div>
+            
+            <ErrorBoundary>
+              <VoiceInterface 
+                personality={currentPersonality}
+                onPersonalityChange={setCurrentPersonality}
+                onShowChatLog={() => setShowChatLog(true)}
+              />
+            </ErrorBoundary>
+          </main>
 
-        {/* Voice Chat Log */}
-        <VoiceChatLog
-          messages={chatMessages}
-          isVisible={showChatLog}
-          onToggle={() => setShowChatLog(!showChatLog)}
-          onClear={() => {
-            voiceService.clearChatHistory();
-            setChatMessages([]);
-          }}
-        />
-      </div>
-    </Router>
+          {/* Voice Chat Log */}
+          <ErrorBoundary>
+            <VoiceChatLog
+              messages={chatMessages}
+              isVisible={showChatLog}
+              onToggle={() => setShowChatLog(!showChatLog)}
+              onClear={() => {
+                voiceService.clearChatHistory();
+                setChatMessages([]);
+              }}
+            />
+          </ErrorBoundary>
+        </div>
+      </Router>
+    </ErrorBoundary>
   );
 }
 

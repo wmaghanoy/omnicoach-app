@@ -243,7 +243,9 @@ class VoiceService {
       
       // Check if ElevenLabs is configured
       if (!useElevenLabs) {
-        throw new Error('ElevenLabs is disabled. Please enable it in Settings.');
+        console.log('🔊 ElevenLabs is disabled. Using browser text-to-speech fallback.');
+        // Fallback to browser TTS
+        return this.speakWithBrowserTTS(text);
       }
       
       if (!apiKey || apiKey.trim() === "") {
@@ -302,6 +304,53 @@ class VoiceService {
       } catch (error) {
         console.error("❌ ElevenLabs error:", error);
         throw error;
+      }
+    }
+
+    async speakWithBrowserTTS(text) {
+      console.log('🔊 Using browser text-to-speech:', text);
+      
+      if (!window.speechSynthesis) {
+        throw new Error('Browser text-to-speech not supported');
+      }
+      
+      return new Promise((resolve, reject) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Configure utterance
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 0.8;
+        
+        // Get voice volume setting
+        this.getVoiceVolume().then(volume => {
+          utterance.volume = volume;
+        }).catch(() => {
+          utterance.volume = 0.8; // fallback
+        });
+        
+        utterance.onend = () => {
+          console.log('✅ Browser TTS completed');
+          resolve();
+        };
+        
+        utterance.onerror = (error) => {
+          console.error('❌ Browser TTS error:', error);
+          reject(new Error(`Browser TTS failed: ${error.error}`));
+        };
+        
+        window.speechSynthesis.speak(utterance);
+      });
+    }
+
+    async getVoiceVolume() {
+      try {
+        const { default: apiClient } = await import('./api-client.js');
+        const volumeSetting = await apiClient.getSetting('voiceVolume');
+        return (parseInt(volumeSetting) || 80) / 100;
+      } catch (error) {
+        console.error('Failed to get voice volume:', error);
+        return 0.8;
       }
     }
 
