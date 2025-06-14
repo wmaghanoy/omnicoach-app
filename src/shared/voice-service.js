@@ -14,6 +14,9 @@ class VoiceService {
 
     initSpeechRecognition() {
       console.log('🎤 Initializing speech recognition...');
+      console.log('🎤 User agent:', navigator.userAgent);
+      console.log('🎤 Platform:', navigator.platform);
+      console.log('🎤 Is Electron:', navigator.userAgent.includes('Electron'));
       console.log('🎤 webkitSpeechRecognition available:', !!window.webkitSpeechRecognition);
       console.log('🎤 SpeechRecognition available:', !!window.SpeechRecognition);
       
@@ -21,10 +24,17 @@ class VoiceService {
         const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
         this.recognition = new SpeechRecognition();
         
-        // Configure recognition
+        // Enhanced configuration for Electron
         this.recognition.continuous = true;
         this.recognition.interimResults = true;
         this.recognition.lang = 'en-US';
+        this.recognition.maxAlternatives = 1;
+        
+        // Electron-specific settings
+        if (navigator.userAgent.includes('Electron')) {
+          console.log('🎤 Applying Electron-specific speech recognition settings');
+          this.recognition.grammars = null; // Disable grammars for better compatibility
+        }
         
         console.log('🎤 Speech recognition configured successfully');
         
@@ -62,25 +72,43 @@ class VoiceService {
         const maxRetries = 3;
         
         this.recognition.onerror = (event) => {
-          console.log('Speech recognition error:', event.error);
-          console.log('Error event details:', event);
+          console.log('🔥 Speech recognition error:', event.error);
+          console.log('🔥 Error event details:', event);
+          console.log('🔥 Is Electron environment:', navigator.userAgent.includes('Electron'));
+          console.log('🔥 Current URL:', window.location.href);
+          console.log('🔥 Navigator online:', navigator.onLine);
           
           if (event.error === 'network') {
+            console.log('🌐 Network error - diagnosing Electron connectivity issues...');
+            
+            // Test internet connectivity
+            fetch('https://www.google.com', { method: 'HEAD', mode: 'no-cors' })
+              .then(() => console.log('✅ Internet connectivity confirmed'))
+              .catch(() => console.log('❌ No internet connectivity'));
+            
             retryCount++;
             if (retryCount <= maxRetries) {
-              console.log(`🌐 Network error detected (${retryCount}/${maxRetries}) - this is common in Electron. Attempting retry...`);
+              console.log(`🌐 Network error detected (${retryCount}/${maxRetries}) - attempting Electron-specific retry...`);
               setTimeout(() => {
                 console.log(`🔄 Retry ${retryCount}/${maxRetries} for speech recognition...`);
                 if (this.recognition && this.isListening) {
-                  this.recognition.start();
+                  try {
+                    this.recognition.start();
+                  } catch (startError) {
+                    console.error('❌ Failed to restart recognition:', startError);
+                  }
                 }
               }, 1000 * retryCount);
             } else {
-              console.log('❌ Max retries reached for network error. Speech recognition may not work in this environment.');
+              console.log('❌ Max retries reached. Web Speech Recognition API may be incompatible with this Electron environment.');
+              console.log('💡 This is a known limitation - Web Speech Recognition works better in browsers than Electron apps.');
               this.isListening = false;
             }
           } else if (event.error === 'not-allowed') {
-            console.error('🎤 Microphone access denied');
+            console.error('🎤 Microphone access denied - check Electron permissions');
+            this.isListening = false;
+          } else if (event.error === 'service-not-allowed') {
+            console.error('🚫 Speech recognition service not allowed - check Electron security settings');
             this.isListening = false;
           } else {
             console.error('🎤 Speech recognition error:', event.error);
@@ -450,6 +478,43 @@ class VoiceService {
 
     getChatHistory() {
       return [...this.chatHistory];
+    }
+
+    // Diagnostic method to test speech recognition
+    async testSpeechRecognition() {
+      console.log('🧪 Testing speech recognition compatibility...');
+      
+      const diagnostics = {
+        hasWebSpeechAPI: !!(window.webkitSpeechRecognition || window.SpeechRecognition),
+        isElectron: navigator.userAgent.includes('Electron'),
+        isOnline: navigator.onLine,
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+        hasRecognition: !!this.recognition,
+        microphonePermission: 'unknown'
+      };
+      
+      // Test microphone permission
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        diagnostics.microphonePermission = 'granted';
+        stream.getTracks().forEach(track => track.stop());
+      } catch (error) {
+        diagnostics.microphonePermission = 'denied';
+        diagnostics.microphoneError = error.message;
+      }
+      
+      // Test internet connectivity to Google
+      try {
+        await fetch('https://www.google.com', { method: 'HEAD', mode: 'no-cors' });
+        diagnostics.googleConnectivity = 'available';
+      } catch (error) {
+        diagnostics.googleConnectivity = 'unavailable';
+        diagnostics.connectivityError = error.message;
+      }
+      
+      console.log('🧪 Speech recognition diagnostics:', diagnostics);
+      return diagnostics;
     }
   }
 

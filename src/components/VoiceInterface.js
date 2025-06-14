@@ -142,6 +142,38 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
     }
   };
 
+  const runDiagnostics = async () => {
+    setLastResponse('Running speech recognition diagnostics...');
+    try {
+      const diagnostics = await voiceService.testSpeechRecognition();
+      
+      let message = 'Speech Recognition Diagnostics:\n\n';
+      message += `Web Speech API Available: ${diagnostics.hasWebSpeechAPI ? '✅' : '❌'}\n`;
+      message += `Running in Electron: ${diagnostics.isElectron ? '✅' : '❌'}\n`;
+      message += `Internet Connected: ${diagnostics.isOnline ? '✅' : '❌'}\n`;
+      message += `Recognition Object: ${diagnostics.hasRecognition ? '✅' : '❌'}\n`;
+      message += `Microphone Permission: ${diagnostics.microphonePermission}\n`;
+      message += `Google Connectivity: ${diagnostics.googleConnectivity}\n\n`;
+      
+      if (diagnostics.microphoneError) {
+        message += `Microphone Error: ${diagnostics.microphoneError}\n`;
+      }
+      if (diagnostics.connectivityError) {
+        message += `Connectivity Error: ${diagnostics.connectivityError}\n`;
+      }
+      
+      message += `\nUser Agent: ${diagnostics.userAgent.substring(0, 100)}...`;
+      
+      console.log('📊 Diagnostics complete:', diagnostics);
+      setLastResponse('Diagnostics completed - check console for details');
+      alert(message);
+    } catch (error) {
+      console.error('🔥 Diagnostics failed:', error);
+      setLastResponse(`Diagnostics failed: ${error.message}`);
+      alert(`Diagnostics failed: ${error.message}`);
+    }
+  };
+
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-4">
       <div className="flex items-center justify-between">
@@ -212,6 +244,14 @@ const VoiceInterface = ({ personality, onPersonalityChange, onShowChatLog }) => 
             title="Test voice output"
           >
             Test Voice
+          </button>
+
+          <button 
+            onClick={runDiagnostics}
+            className="px-3 py-1 rounded bg-yellow-600 hover:bg-yellow-700 text-white text-sm transition-colors"
+            title="Run speech recognition diagnostics"
+          >
+            Diagnose
           </button>
 
           <button className="p-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">

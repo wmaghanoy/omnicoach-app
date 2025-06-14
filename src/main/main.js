@@ -26,25 +26,37 @@ function createWindow() {
       webSecurity: true,
       // GPU fallback options
       offscreen: false,
-      enableWebSQL: false
+      enableWebSQL: false,
+      // Enhanced permissions for speech recognition
+      allowRunningInsecureContent: false,
+      experimentalFeatures: true,
+      // Enable speech recognition APIs
+      plugins: true,
+      nativeWindowOpen: true
     },
     show: false,
     backgroundColor: '#0f0f0f'
   });
 
-  // Handle permission requests
+  // Handle permission requests - Enhanced for speech recognition
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
     console.log('🔐 Permission requested:', permission);
     if (permission === 'microphone') {
       console.log('🎤 Granting microphone permission');
       callback(true);
+    } else if (permission === 'media') {
+      console.log('📹 Granting media permission');
+      callback(true);
+    } else if (permission === 'audioCapture') {
+      console.log('🎵 Granting audio capture permission');
+      callback(true);
     } else {
+      console.log(`❌ Denying permission: ${permission}`);
       callback(false);
     }
   });
 
-  // Set additional security headers (temporarily disabled for debugging)
-  /*
+  // Set enhanced security headers for Web Speech Recognition
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -55,14 +67,13 @@ function createWindow() {
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: blob:; " +
           "font-src 'self' data:; " +
-          "connect-src 'self' ws: wss: http://localhost:* https://api.elevenlabs.io https://api.openai.com https://api.anthropic.com http://localhost:11434; " +
+          "connect-src 'self' ws: wss: http://localhost:* https://api.elevenlabs.io https://api.openai.com https://api.anthropic.com http://localhost:11434 https://www.google.com https://speech.googleapis.com; " +
           "media-src 'self' blob: data:; " +
           "worker-src 'self' blob:;"
         ]
       }
     });
   });
-  */
 
   const startUrl = isDev 
     ? 'http://localhost:3281' 
@@ -127,6 +138,11 @@ function createWindow() {
   } else {
     mainWindow.loadURL(startUrl);
   }
+
+  // Set user agent to help with speech recognition compatibility
+  mainWindow.webContents.setUserAgent(
+    mainWindow.webContents.getUserAgent() + ' Chrome/120.0.0.0'
+  );
 
   if (isDev) {
     mainWindow.webContents.openDevTools();
