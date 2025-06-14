@@ -1,6 +1,5 @@
 class VoiceService {
     constructor() {
-      this.synthesis = window.speechSynthesis;
       this.recognition = null;
       this.isListening = false;
       this.alwaysListening = false;
@@ -9,11 +8,6 @@ class VoiceService {
       this.responseCallback = null;
       this.chatHistory = [];
       this.chatLogCallback = null;
-      
-      // Initialize logging if in Electron
-      this.logger = null;
-      // Note: With context isolation enabled, we no longer have access to window.require
-      // Logging will be handled through console for now
       
       this.initSpeechRecognition();
     }
@@ -53,149 +47,164 @@ class VoiceService {
             }
           }
           
-          // Call transcript callback with interim results
           if (this.transcriptCallback) {
-            this.transcriptCallback(interimTranscript || finalTranscript, !!finalTranscript);
+            this.transcriptCallback(finalTranscript, interimTranscript);
           }
           
-          // Process final result
-          if (finalTranscript) {
-            console.log("Final transcript:", finalTranscript);
-            const trimmedText = finalTranscript.trim();
-            
-            // Add user message to chat history
-            this.addMessageToHistory('user', trimmedText);
-            
-            this.processVoiceCommand(trimmedText);
+          if (finalTranscript.trim()) {
+            console.log("🗣️ Final transcript:", finalTranscript);
+            this.processVoiceCommand(finalTranscript.trim());
           }
         };
         
-        this.recognition.onerror = (e) => {
-          console.error("Speech recognition error:", e.error);
-          this.isListening = false;
+        // Handle network errors with retry mechanism
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        this.recognition.onerror = (event) => {
+          console.log('Speech recognition error:', event.error);
+          console.log('Error event details:', event);
+          
+          if (event.error === 'network') {
+            retryCount++;
+            if (retryCount <= maxRetries) {
+              console.log(`🌐 Network error detected (${retryCount}/${maxRetries}) - this is common in Electron. Attempting retry...`);
+              setTimeout(() => {
+                console.log(`🔄 Retry ${retryCount}/${maxRetries} for speech recognition...`);
+                if (this.recognition && this.isListening) {
+                  this.recognition.start();
+                }
+              }, 1000 * retryCount);
+            } else {
+              console.log('❌ Max retries reached for network error. Speech recognition may not work in this environment.');
+              this.isListening = false;
+            }
+          } else if (event.error === 'not-allowed') {
+            console.error('🎤 Microphone access denied');
+            this.isListening = false;
+          } else {
+            console.error('🎤 Speech recognition error:', event.error);
+            this.isListening = false;
+          }
         };
         
         this.recognition.onend = () => {
           console.log("Voice recognition ended");
           this.isListening = false;
           
-          // Restart if always listening is enabled
-          if (this.alwaysListening) {
-            setTimeout(() => this.startListening().catch(console.error), 1000);
+          // Auto-restart if always listening is enabled
+          if (this.alwaysListening && this.recognition) {
+            setTimeout(() => {
+              this.startListening();
+            }, 1000);
           }
         };
+        
+      } else {
+        console.warn("🎤 Speech recognition not available in this browser");
       }
     }
 
-    async processVoiceCommand(text) {
-      console.log(`🎤 Processing voice command: "${text}" with personality: ${this.personality}`);
+    async processVoiceCommand(transcript) {
+      console.log("🎙️ Processing voice command:", transcript);
       
+      // Check for wake word if always listening
+      if (this.alwaysListening) {
+        const wakeWord = await this.getWakeWord();
+        if (!transcript.toLowerCase().includes(wakeWord.toLowerCase())) {
+          console.log(`🛌 Wake word "${wakeWord}" not detected in: "${transcript}"`);
+          return;
+        }
+        
+        // Remove wake word from transcript
+        const wakeWordRegex = new RegExp(wakeWord, 'gi');
+        transcript = transcript.replace(wakeWordRegex, '').trim();
+        console.log(`🎯 Wake word detected! Processing: "${transcript}"`);
+      }
+      
+      if (!transcript) return;
+
+      // Add to chat history
+      this.chatHistory.push({
+        role: 'user',
+        content: transcript,
+        timestamp: new Date().toISOString()
+      });
+
+      // Update chat log
+      if (this.chatLogCallback) {
+        this.chatLogCallback([...this.chatHistory]);
+      }
+
       try {
-        // Check if we're in Electron environment
-        if (typeof window === 'undefined' || !window.electron) {
-          console.error('❌ Not in Electron environment - window.electron not available');
-          throw new Error('Electron IPC not available');
-        }
+        // Get LLM response
+        console.log("🤖 Getting LLM response...");
+        const response = await this.getLLMResponse(transcript);
         
-        console.log('📋 Getting user context...');
-        const userContext = await this.getUserContext();
-        console.log('✅ User context retrieved:', Object.keys(userContext));
-        
-        console.log('🤖 Generating AI response...');
-        const aiResponse = await this.generateAIResponse(text, userContext);
-        console.log('✅ AI response generated:', aiResponse?.substring(0, 100) + '...');
-        
-        // Add AI response to chat history
-        this.addMessageToHistory('ai', aiResponse, this.personality);
-        
-        // Call response callback and speak
-        if (this.responseCallback) {
-          this.responseCallback(aiResponse);
-        }
-        this.speak(aiResponse);
-        
-      } catch (error) {
-        console.error('❌ Error processing voice command:', error);
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          electronAvailable: !!window.electron,
-          invokeAvailable: !!window.electron?.invoke
+        // Add to chat history
+        this.chatHistory.push({
+          role: 'assistant', 
+          content: response,
+          timestamp: new Date().toISOString()
         });
-        
-        const fallbackResponse = `I'm having trouble processing that right now. Error: ${error.message}`;
-        
-        // Add error response to chat history
-        this.addMessageToHistory('ai', fallbackResponse, this.personality);
+
+        // Update chat log
+        if (this.chatLogCallback) {
+          this.chatLogCallback([...this.chatHistory]);
+        }
+
+        // Speak response using ElevenLabs
+        console.log("🔊 Speaking response with ElevenLabs...");
+        await this.speak(response);
         
         if (this.responseCallback) {
-          this.responseCallback(fallbackResponse);
+          this.responseCallback(response);
         }
-        this.speak(fallbackResponse);
-      }
-    }
-
-    async getUserContext() {
-      // Get user data via Electron IPC if available
-      try {
-        if (typeof window !== 'undefined' && window.electron) {
-          console.log('📊 Fetching user data via electron API...');
-          const [tasks, goals, habits] = await Promise.all([
-            window.electron.invoke('tasks:getAll').catch((e) => { console.warn('Tasks fetch failed:', e); return []; }),
-            window.electron.invoke('goals:getAll').catch((e) => { console.warn('Goals fetch failed:', e); return []; }),
-            window.electron.invoke('habits:getAll').catch((e) => { console.warn('Habits fetch failed:', e); return []; })
-          ]);
-          
-          console.log('📊 User data fetched:', { 
-            tasksCount: tasks.length, 
-            goalsCount: goals.length, 
-            habitsCount: habits.length 
-          });
-          
-          return { tasks, goals, habits };
-        } else {
-          console.warn('❌ window.electron not available');
-          return {};
-        }
+        
       } catch (error) {
-        console.warn('❌ Could not fetch user context:', error);
-        return {};
+        console.error("❌ Error processing voice command:", error);
+        const errorResponse = "I'm sorry, I encountered an error processing your request.";
+        await this.speak(errorResponse);
+        
+        if (this.responseCallback) {
+          this.responseCallback(errorResponse);
+        }
       }
     }
 
-    async generateAIResponse(prompt, context) {
-      // Use LLM service if available via IPC
+    async getWakeWord() {
       try {
-        if (typeof window !== 'undefined' && window.electron) {
-          console.log('🔄 Calling LLM via electron API with:', {
-            prompt: prompt.substring(0, 50) + '...',
-            contextKeys: Object.keys(context),
+        if (window.electron) {
+          return await window.electron.invoke('settings:get', 'wakeWord') || 'Hey Coach';
+        }
+        return 'Hey Coach';
+      } catch (error) {
+        console.error('Failed to get wake word:', error);
+        return 'Hey Coach';
+      }
+    }
+
+    async getLLMResponse(userMessage) {
+      try {
+        console.log("🤖 Calling LLM service with message:", userMessage);
+        
+        // Get LLM service
+        const { default: llmService } = await import('./llm-service.js');
+        
+        // Get the response
+        const response = await llmService.generateResponse(
+          userMessage,
+          {
+            chatHistory: this.chatHistory,
             personality: this.personality
-          });
-          
-          const response = await window.electron.invoke('llm:generateResponse', 
-            prompt, 
-            context, 
-            {
-              personality: this.personality,
-              requestType: 'voice_command'
-            }
-          );
-          
-          console.log('🔄 Raw IPC response received:', response);
-        } else {
-          throw new Error('Electron IPC not available - window.electron not found');
-        }
+          },
+          {
+            personality: this.personality,
+            requestType: 'voice_interaction'
+          }
+        );
         
-        console.log('🤖 LLM response received:', {
-          type: typeof response,
-          isNull: response === null,
-          hasResponse: !!response?.response,
-          isString: typeof response === 'string',
-          success: !!response?.success,
-          preview: (response?.response || response)?.substring(0, 100) + '...',
-          fullResponse: response
-        });
+        console.log("✅ LLM response received:", response);
         
         // Handle null response
         if (response === null || response === undefined) {
@@ -219,7 +228,9 @@ class VoiceService {
     }
 
     async speak(text) {
-      // Get settings from database via Electron
+      console.log("🔊 ElevenLabs TTS starting...");
+      
+      // Get ElevenLabs settings from database
       let apiKey, voiceId, useElevenLabs;
       
       try {
@@ -234,132 +245,107 @@ class VoiceService {
           useElevenLabs = localStorage.getItem("useElevenLabs") === 'true';
         }
       } catch (error) {
-        console.error('Failed to get ElevenLabs settings:', error);
-        useElevenLabs = false;
+        console.error('❌ Failed to get ElevenLabs settings:', error);
+        throw new Error('ElevenLabs settings not available');
       }
       
-      // Check if ElevenLabs should be used and API key is available
-      if (useElevenLabs && apiKey && apiKey !== "your-api-key" && apiKey.trim() !== "") {
-        console.log(`Attempting ElevenLabs speech synthesis with voice ID: ${voiceId}...`);
-        try {
-          const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-            method: "POST",
-            headers: {
-              "Accept": "audio/mpeg",
-              "Content-Type": "application/json",
-              "xi-api-key": apiKey
-            },
-            body: JSON.stringify({
-              text: text,
-              model_id: "eleven_monolingual_v1",
-              voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.75
-              }
-            })
-          });
-          
-          if (response.ok) {
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.play();
-            console.log("✅ ElevenLabs speech synthesis successful");
-            return;
-          } else {
-            const errorText = await response.text();
-            console.error("ElevenLabs API error:", response.status, errorText);
-            throw new Error(`ElevenLabs API failed: ${response.status}`);
-          }
-        } catch (error) {
-          console.error("❌ ElevenLabs error, falling back to browser speech:", error.message);
-        }
-      } else {
-        if (useElevenLabs && !apiKey) {
-          console.log("🔑 ElevenLabs enabled but no API key found. Using browser speech synthesis.");
-        } else {
-          console.log("🔊 Using browser speech synthesis (ElevenLabs disabled or not configured)");
-        }
+      // Check if ElevenLabs is configured
+      if (!useElevenLabs) {
+        throw new Error('ElevenLabs is disabled. Please enable it in Settings.');
       }
       
-      // Fallback to browser speech synthesis
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1.0;
+      if (!apiKey || apiKey.trim() === "") {
+        throw new Error('ElevenLabs API key not configured. Please add it in Settings.');
+      }
       
-      // Get voice volume from settings
-      let voiceVolume = 80; // default
+      console.log(`🎵 Using ElevenLabs voice ID: ${voiceId}`);
+      
       try {
-        if (window.electron) {
-          const volume = await window.electron.invoke('settings:get', 'voiceVolume');
-          voiceVolume = parseInt(volume) || 80;
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+          method: "POST",
+          headers: {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": apiKey
+          },
+          body: JSON.stringify({
+            text: text,
+            model_id: "eleven_monolingual_v1",
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          })
+        });
+        
+        if (response.ok) {
+          const audioBlob = await response.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          
+          // Get volume setting
+          let volume = 0.8; // default
+          try {
+            if (window.electron) {
+              const volumeSetting = await window.electron.invoke('settings:get', 'voiceVolume');
+              volume = (parseInt(volumeSetting) || 80) / 100;
+            }
+          } catch (error) {
+            console.error('Failed to get volume setting:', error);
+          }
+          
+          audio.volume = volume;
+          await audio.play();
+          console.log("✅ ElevenLabs speech synthesis successful");
+          
+          // Clean up the URL after playback
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+          };
+          
         } else {
-          voiceVolume = parseInt(localStorage.getItem("voiceVolume")) || 80;
+          const errorText = await response.text();
+          console.error("❌ ElevenLabs API error:", response.status, errorText);
+          throw new Error(`ElevenLabs API failed: ${response.status} - ${errorText}`);
         }
       } catch (error) {
-        console.error('Failed to get voice volume setting:', error);
+        console.error("❌ ElevenLabs error:", error);
+        throw error;
       }
-      
-      utterance.volume = voiceVolume / 100;
-      this.synthesis.speak(utterance);
     }
 
     async startListening() {
       if (this.recognition && !this.isListening) {
         try {
           console.log("🎤 Starting to listen...");
-          console.log("🎤 Recognition object:", !!this.recognition);
-          console.log("🎤 Currently listening:", this.isListening);
           
-          // First, check if we can access the microphone
-          try {
-            console.log("🎤 Requesting microphone access...");
-            
-            // Check if mediaDevices is available
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-              throw new Error("MediaDevices API not supported in this environment");
-            }
-            
-            // List available audio input devices
+          // Check microphone access
+          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             try {
+              console.log("🎤 Requesting microphone access...");
+              
               const devices = await navigator.mediaDevices.enumerateDevices();
               const audioInputs = devices.filter(device => device.kind === 'audioinput');
               console.log("🎤 Available audio input devices:", audioInputs.length);
               audioInputs.forEach((device, index) => {
-                console.log(`🎤 Device ${index + 1}: ${device.label || 'Unknown device'} (${device.deviceId})`);
+                console.log(`🎤 Device ${index + 1}: ${device.label} (${device.deviceId})`);
               });
               
-              if (audioInputs.length === 0) {
-                throw new Error("No microphone devices found. This might be because you're running in WSL or a virtual environment without audio device access.");
-              }
-            } catch (enumError) {
-              console.warn("🎤 Could not enumerate devices:", enumError);
+              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+              console.log("🎤 Microphone access granted!");
+              
+              // Stop the stream as we just needed permission
+              stream.getTracks().forEach(track => track.stop());
+              
+            } catch (micError) {
+              console.error("🎤 Microphone access denied:", micError);
+              throw new Error(`Microphone access denied: ${micError.message}`);
             }
-            
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            console.log("🎤 Microphone access granted!");
-            
-            // Stop the stream since we just needed to check permission
-            stream.getTracks().forEach(track => track.stop());
-            
-            // Now start speech recognition
-            this.recognition.start();
-          } catch (micError) {
-            console.error("🎤 Microphone access denied:", micError);
-            
-            // Provide helpful error messages based on the error
-            let errorMessage = `Microphone access denied: ${micError.message}`;
-            
-            if (micError.message.includes("Requested device not found")) {
-              errorMessage += "\n\n🔧 Possible solutions:\n" +
-                "1. If you're using WSL, try running the app on Windows directly\n" +
-                "2. Check if your microphone is connected and working\n" +
-                "3. Try using a different browser\n" +
-                "4. Check system audio settings";
-            }
-            
-            throw new Error(errorMessage);
           }
+          
+          // Start speech recognition
+          this.recognition.start();
+          
         } catch (error) {
           console.error("🎤 Error starting voice recognition:", error);
           console.error("🎤 Error details:", {
@@ -368,122 +354,64 @@ class VoiceService {
             hasRecognition: !!this.recognition,
             isListening: this.isListening
           });
+          throw error;
         }
-      } else {
-        console.warn("🎤 Cannot start listening:", {
-          hasRecognition: !!this.recognition,
-          isListening: this.isListening
-        });
       }
     }
 
     stopListening() {
       if (this.recognition && this.isListening) {
-        console.log("Stopping voice recognition...");
+        console.log("🛑 Stopping voice recognition...");
         this.recognition.stop();
         this.isListening = false;
       }
     }
 
-    setPersonality(personality) {
-      this.personality = personality || 'Coach';
-      console.log("Voice personality set to:", this.personality);
+    setTranscriptCallback(callback) {
+      this.transcriptCallback = callback;
     }
 
-    setCallbacks(transcriptCallback, responseCallback) {
-      this.transcriptCallback = transcriptCallback;
-      this.responseCallback = responseCallback;
-      console.log("Voice callbacks set");
-    }
-
-    setEnabled(enabled) {
-      if (!enabled && this.isListening) {
-        this.stopListening();
-      }
-      console.log("Voice service enabled:", enabled);
-    }
-
-    setAlwaysListening(alwaysListening) {
-      this.alwaysListening = alwaysListening;
-      console.log("Always listening set to:", alwaysListening);
-      
-      if (alwaysListening && !this.isListening) {
-        this.startListening().catch(console.error);
-      } else if (!alwaysListening && this.isListening) {
-        this.stopListening();
-      }
-    }
-
-    isSupported() {
-      return !!(window.webkitSpeechRecognition || window.SpeechRecognition);
-    }
-
-    // Chat history management
-    addMessageToHistory(type, text, personality = null, confidence = null) {
-      const message = {
-        type, // 'user' or 'ai'
-        text,
-        timestamp: Date.now(),
-        personality: personality || this.personality,
-        confidence
-      };
-      
-      this.chatHistory.push(message);
-      console.log(`💬 Added ${type} message to chat history:`, text.substring(0, 50) + '...', {
-        totalMessages: this.chatHistory.length,
-        hasCallback: !!this.chatLogCallback,
-        message
-      });
-      
-      // Notify chat log component
-      if (this.chatLogCallback) {
-        console.log('💬 Calling chat log callback with', this.chatHistory.length, 'messages');
-        this.chatLogCallback([...this.chatHistory]); // Create new array to trigger React update
-      } else {
-        console.warn('💬 No chat log callback set!');
-      }
-      
-      // Keep only last 100 messages to prevent memory issues
-      if (this.chatHistory.length > 100) {
-        this.chatHistory = this.chatHistory.slice(-100);
-      }
+    setResponseCallback(callback) {
+      this.responseCallback = callback;
     }
 
     setChatLogCallback(callback) {
       this.chatLogCallback = callback;
-      console.log('💬 Chat log callback set:', typeof callback, {
-        currentHistoryLength: this.chatHistory.length,
-        callbackIsFunction: typeof callback === 'function'
-      });
-      
-      // Immediately send existing history
-      if (callback && this.chatHistory.length > 0) {
-        console.log('💬 Sending existing chat history to callback');
-        callback([...this.chatHistory]);
-      }
     }
 
-    getChatHistory() {
-      return this.chatHistory;
+    setPersonality(personality) {
+      this.personality = personality;
+      console.log(`🎭 Voice personality set to: ${personality}`);
+    }
+
+    async setAlwaysListening(enabled) {
+      this.alwaysListening = enabled;
+      console.log(`👂 Always listening mode: ${enabled ? 'enabled' : 'disabled'}`);
+      
+      if (enabled && !this.isListening) {
+        try {
+          await this.startListening();
+        } catch (error) {
+          console.error("Failed to start always listening:", error);
+        }
+      } else if (!enabled && this.isListening) {
+        this.stopListening();
+      }
     }
 
     clearChatHistory() {
       this.chatHistory = [];
-      console.log('Chat history cleared');
+      console.log("🗑️ Chat history cleared");
       
       if (this.chatLogCallback) {
-        this.chatLogCallback(this.chatHistory);
+        this.chatLogCallback([]);
       }
     }
 
-    exportChatHistory() {
-      return this.chatHistory.map(msg => ({
-        ...msg,
-        formattedTime: new Date(msg.timestamp).toLocaleString()
-      }));
+    getChatHistory() {
+      return [...this.chatHistory];
     }
   }
 
-const voiceService = new VoiceService();
-
-export default voiceService;
+  const voiceService = new VoiceService();
+  export default voiceService;
